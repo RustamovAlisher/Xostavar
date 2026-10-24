@@ -36,7 +36,7 @@ export class SalesController {
   @Get(':id')
   @Perms('view_pos', 'view_analytics')
   get(@CurrentUser() u: AuthUser, @Param('id', ParseUUIDPipe) id: string) {
-    return this.sales.get(u, id);
+    return this.sales.get(u, id, true);
   }
 
   /** Storno (TZ 7.9): administrator, sabab bilan. */

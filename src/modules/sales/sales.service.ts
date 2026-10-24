@@ -104,9 +104,18 @@ export class SalesService {
   async quote(user: AuthUser, branchId: string, dto: SaleDto) {
     const q = await this.quoteLines(this.db, branchId, dto, false);
     const withCost = user.permissions.includes('view_cost_price');
+    const warnings = [...q.warnings];
+    if (dto.customerId) {
+      const cu = await this.customers.get(dto.customerId);
+      if (cu.overdue) warnings.push({ code: 'customer_overdue', message: `${cu.name}: qarz muddati o'tgan (${cu.dueDate}), qarzi ${cu.totalDebtUZS.toLocaleString('ru-RU')} so'm`, productId: '' });
+      const paid = (dto.payments ?? []).reduce((a, p) => a + Math.round(p.amount), 0);
+      if (dto.onCredit && q.total - paid > 0 && cu.totalDebtUZS + (q.total - paid) > cu.creditLimitUZS) {
+        warnings.push({ code: 'credit_limit_exceeded', message: `Kredit limiti ${(cu.totalDebtUZS + q.total - paid - cu.creditLimitUZS).toLocaleString('ru-RU')} so'mga oshadi`, productId: '' });
+      }
+    }
     return {
       lines: q.lines.map(({ available, costPerBase, ...l }) => ({ ...l, available, ...(withCost ? { costPerBase } : {}) })),
-      subtotal: q.subtotal, discountAmount: q.discount, totalAmount: q.total, vatIncluded: q.vat, ...(withCost ? { profit: q.profit } : {}), warnings: q.warnings,
+      subtotal: q.subtotal, discountAmount: q.discount, totalAmount: q.total, vatIncluded: q.vat, ...(withCost ? { profit: q.profit } : {}), warnings,
     };
   }
 
@@ -238,6 +247,7 @@ export class SalesService {
         debtNote = `, ${(-r.applied).toLocaleString('ru-RU')} so'm qarz qaytarildi${refund > 0 ? `; mijoz ${refund.toLocaleString('ru-RU')} so'mni avval to'lagan — naqd qaytariladi` : ''}`;
       }
       await tx.update(sales).set({ status: 'voided', voidedAt: new Date(), voidedBy: user.id, voidedByName: user.name, voidReason: reason.trim() }).where(eq(sales.id, id));
+      await this.shifts.refreezeIfClosed(tx, s.shiftId);
       await this.audit.log(user, { action: 'sale_void', module: 'Kassa', targetId: id, targetName: `Chek ${s.number} · ${s.customerName}`, branchId, requestId, details: `Bekor qilindi: ${s.totalAmount.toLocaleString('ru-RU')} so'm${debtNote}. Sabab: ${reason.trim()}` }, tx);
     });
     return this.get(user, id);
@@ -245,9 +255,15 @@ export class SalesService {
 
   /* ───────── O'qish ───────── */
 
-  async get(user: AuthUser, id: string) {
+  async get(user: AuthUser, id: string, strict = false) {
     const [s] = await this.db.select().from(sales).where(eq(sales.id, id)).limit(1);
     if (!s) throw notFound('Chek');
+    if (strict) {
+      // Id bilan so'rash: filial xodimi faqat o'z filiali chekini, kassir (hisobot huquqisiz) faqat o'z chekini ko'radi
+      if (!user.allBranches && !user.branchIds.includes(s.branchId)) throw forbidden("Bu filialga kirish huquqingiz yo'q", 'branch_forbidden');
+      const seeAll = user.permissions.includes('view_analytics') || user.permissions.includes('manage_users');
+      if (!seeAll && s.cashierId !== user.id) throw forbidden("Faqat o'zingiz tuzgan cheklarni ko'ra olasiz");
+    }
     const [lines, pays] = await Promise.all([this.db.select().from(saleLines).where(eq(saleLines.saleId, id)).orderBy(saleLines.sortOrder), this.db.select().from(salePayments).where(eq(salePayments.saleId, id))]);
     return this.view(user, s, lines, pays);
   }

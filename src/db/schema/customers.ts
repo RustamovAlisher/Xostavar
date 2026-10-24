@@ -1,3 +1,4 @@
+import { sql } from 'drizzle-orm';
 import { bigserial, date, index, pgTable, text, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
 import { createdAt, deletedAt, id, money, updatedAt, version } from './common.js';
 import { customerGroups } from './settings.js';
@@ -23,7 +24,12 @@ export const customers = pgTable(
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
-  (t) => [uniqueIndex('customers_phone_uq').on(t.phone), index('customers_name_idx').on(t.name)],
+  (t) => [
+    uniqueIndex('customers_phone_uq').on(t.phone),
+    index('customers_name_trgm_idx').using('gin', sql`lower(${t.name}) gin_trgm_ops`),
+    // Qarzdorlar ro'yxati va hisobotlar: faqat qarzi borlar
+    index('customers_debtors_idx').on(t.totalDebt).where(sql`${t.totalDebt} > 0`),
+  ],
 );
 
 /** Mijoz qarzi harakati (TZ 7.5): + qarz oshishi, − kamayishi. */

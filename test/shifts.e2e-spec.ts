@@ -1,5 +1,5 @@
 import { INestApplication } from '@nestjs/common';
-import { code, createApp, makeProduct, seeded, uniq, type Seeded } from './helpers.js';
+import { code, createApp, makeProduct, seeded, uniq, type Seeded, today as todayStr } from './helpers.js';
 
 describe('shifts (TZ 7.7, 8.9, 9.7)', () => {
   let app: INestApplication;
@@ -47,7 +47,7 @@ describe('shifts (TZ 7.7, 8.9, 9.7)', () => {
     await c.post('/sales', { lines: [{ productId: p.id, unit: 'piece', qty: 2 }], payments: [{ methodId: s.methods.cash, amount: 20000 }] });
     await c.post('/sales', { lines: [{ productId: p.id, unit: 'piece', qty: 1 }], payments: [{ methodId: s.methods.card, amount: 10000 }] });
     const cat = s.settings.expenseCategories[0].id;
-    await c.post('/expenses', { date: new Date().toISOString().slice(0, 10), categoryId: cat, amount: 5000, methodId: s.methods.cash, source: 'cash_register' });
+    await c.post('/expenses', { date: todayStr(), categoryId: cat, amount: 5000, methodId: s.methods.cash, source: 'cash_register' });
     const r = await c.post('/shifts/close', { countedCash: 160000 });
     expect(r.status).toBe(201);
     expect(r.body.totals).toMatchObject({ cash: 20000, card: 10000, receipts: 2, revenue: 30000, cashOut: 5000, byMethod: { cash: 20000, card: 10000 } });

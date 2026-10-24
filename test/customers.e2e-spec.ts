@@ -1,5 +1,5 @@
 import { INestApplication } from '@nestjs/common';
-import { code, createApp, ensureShift, makeProduct, seeded, type Seeded } from './helpers.js';
+import { code, createApp, ensureShift, makeProduct, seeded, type Seeded, today as todayStr } from './helpers.js';
 
 const phone = () => '+998 9' + String(Math.floor(10000000 + Math.random() * 89999999));
 
@@ -72,7 +72,7 @@ describe('customers (TZ 7.5, 8.8, 9.8)', () => {
     await s.admin.post('/sales', { lines: [{ productId: p.id, unit: 'piece', qty: 1 }], customerId: past.id, onCredit: true });
     await close();
     expect((await s.admin.get(`/customers/${far.id}`)).body.dueDate).toBe('2030-06-01');
-    const today = new Date().toISOString().slice(0, 10);
+    const today = todayStr();
     expect((await s.admin.get(`/customers/${past.id}`)).body.dueDate > today).toBe(true);
   });
   it('o\'chirish: faqat manage_users va qarz 0; yumshoq (telefon bo\'shaydi)', async () => {

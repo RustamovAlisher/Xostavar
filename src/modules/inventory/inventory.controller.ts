@@ -46,8 +46,8 @@ export class InventoryController {
 
   @Get('stock-in/:id')
   @Perms('view_inventory')
-  receipt(@Param('id', ParseUUIDPipe) id: string) {
-    return this.inventory.getReceipt(id);
+  receipt(@CurrentUser() u: AuthUser, @Param('id', ParseUUIDPipe) id: string) {
+    return this.inventory.getReceipt(id, u);
   }
 
   @Get('stock-movements')

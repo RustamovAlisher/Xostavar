@@ -53,7 +53,7 @@ export class ShiftsController {
 
   @Get(':id/report')
   @Perms('view_pos', 'view_analytics')
-  report(@Param('id', ParseUUIDPipe) id: string) {
-    return this.shifts.report(id);
+  report(@CurrentUser() u: AuthUser, @Param('id', ParseUUIDPipe) id: string) {
+    return this.shifts.report(id, u);
   }
 }

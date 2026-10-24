@@ -6,6 +6,8 @@ import request, { type Response } from 'supertest';
 import { AppModule } from '../src/app.module.js';
 import { configureApp } from '../src/app.setup.js';
 
+/** Bugungi sana — server bilan bir xil (Asia/Tashkent), UTC emas. */
+export const today = () => new Intl.DateTimeFormat('en-CA', { timeZone: 'Asia/Tashkent' }).format(new Date());
 export const uniq = (p = '') => `${p}${Math.random().toString(36).slice(2, 8)}`;
 
 export async function createApp(): Promise<INestApplication> {

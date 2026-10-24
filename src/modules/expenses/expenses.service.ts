@@ -69,10 +69,14 @@ export class ExpensesService {
     if (e.branchId !== branchId) throw forbidden('Boshqa filial xarajati', 'branch_forbidden');
     if (e.voidedAt) throw conflict('already_voided', "Bu xarajat allaqachon o'chirilgan");
     if (e.createdBy !== user.id && !user.permissions.includes('manage_users')) throw forbidden("Boshqa xodim yozgan xarajatni faqat administrator o'chiradi");
-    const [row] = await this.db.update(expenses).set({ voidedAt: new Date(), voidedBy: user.id }).where(eq(expenses.id, id)).returning();
     const [cat] = await this.db.select({ name: expenseCategories.name }).from(expenseCategories).where(eq(expenseCategories.id, e.categoryId)).limit(1);
-    await this.audit.log(user, { action: 'delete', module: 'Xarajatlar', targetId: id, targetName: cat?.name ?? 'Xarajat', branchId, requestId, details: `${e.amount.toLocaleString('ru-RU')} so'm xarajat o'chirildi` });
-    return row;
+    return runTx(this.db, async (tx) => {
+      const [row] = await tx.update(expenses).set({ voidedAt: new Date(), voidedBy: user.id }).where(and(eq(expenses.id, id), isNull(expenses.voidedAt))).returning();
+      if (!row) throw conflict('already_voided', "Bu xarajat allaqachon o'chirilgan");
+      await this.shifts.refreezeIfClosed(tx, e.shiftId); // kassadan chiqim yopilgan smenada bo'lsa Z-hisobot yangilanadi
+      await this.audit.log(user, { action: 'delete', module: 'Xarajatlar', targetId: id, targetName: cat?.name ?? 'Xarajat', branchId, requestId, details: `${e.amount.toLocaleString('ru-RU')} so'm xarajat o'chirildi` }, tx);
+      return row;
+    });
   }
 
   /** Ro'yxat + kategoriya bo'yicha jami (2 ta GROUP BY so'rov). Egasi `branchId=all` bilan hammasini ko'radi. */

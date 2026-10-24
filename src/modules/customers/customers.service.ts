@@ -1,5 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { and, asc, desc, eq, gt, ilike, isNull, like, lt, ne, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gt, isNull, like, lt, ne, or, sql } from 'drizzle-orm';
 import { DB, type Db, type DbOrTx } from '../../db/db.module.js';
 import { runTx } from '../../db/tx.js';
 import { customerGroups, customers, debtLedger } from '../../db/schema/index.js';
@@ -52,7 +52,7 @@ export class CustomersService {
       isNull(customers.deletedAt),
       q.hasDebt === 'true' ? gt(customers.totalDebt, 0) : undefined,
       q.overdue === 'true' ? and(gt(customers.totalDebt, 0), lt(customers.dueDate, today)) : undefined,
-      q.q?.trim() ? or(ilike(customers.name, `%${q.q.trim()}%`), like(customers.phone, `%${q.q.replace(/\D/g, '')}%`).if(q.q.replace(/\D/g, '').length >= 2)) : undefined,
+      q.q?.trim() ? or(sql`lower(${customers.name}) like ${`%${q.q.trim().toLowerCase()}%`}`, like(customers.phone, `%${q.q.replace(/\D/g, '')}%`).if(q.q.replace(/\D/g, '').length >= 2)) : undefined,
     );
     const overdueExpr = sql`(${customers.totalDebt} > 0 and ${customers.dueDate} < ${today}::date)`;
     const [rows, [{ total }]] = await Promise.all([

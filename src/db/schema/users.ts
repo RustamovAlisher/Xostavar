@@ -92,5 +92,5 @@ export const loginAttempts = pgTable(
     success: boolean('success').notNull(),
     createdAt: createdAt(),
   },
-  (t) => [index('login_attempts_login_time_idx').on(t.login, t.createdAt)],
+  (t) => [index('login_attempts_login_time_idx').on(t.login, t.createdAt), index('login_attempts_time_idx').on(t.createdAt)],
 );

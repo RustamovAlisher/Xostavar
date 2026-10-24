@@ -44,3 +44,10 @@ export class ProductListQuery extends PageQuery {
   @ApiPropertyOptional({ description: 'Faqat joriy filial omboridagilar' }) @IsOptional() @IsString() inBranch?: string;
   @IsOptional() @IsString() lowStock?: string;
 }
+
+/** Filial bo'yicha narx (TZ 7.3): qator bo'lmasa umumiy narx ishlatiladi. */
+export class BranchPriceDto {
+  @IsOptional() @IsUUID() variantId?: string;
+  @IsInt() @Min(1) retailPrice: number;
+  @IsOptional() @IsInt() @Min(0) wholesalePrice?: number | null;
+}

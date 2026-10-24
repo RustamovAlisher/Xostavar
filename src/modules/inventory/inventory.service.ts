@@ -155,9 +155,11 @@ export class InventoryService {
     return this.getReceipt(receiptId);
   }
 
-  async getReceipt(id: string) {
+  async getReceipt(id: string, user?: AuthUser) {
     const [r] = await this.db.select().from(stockReceipts).where(eq(stockReceipts.id, id)).limit(1);
     if (!r) throw notFound('Kirim hujjati');
+    // Filialga biriktirilgan xodim faqat o'z filiali hujjatini ko'radi (id bilan ham)
+    if (user && !user.allBranches && !user.branchIds.includes(r.branchId)) throw forbidden("Bu filialga kirish huquqingiz yo'q", 'branch_forbidden');
     const lines = await this.db.select().from(stockReceiptLines).where(eq(stockReceiptLines.receiptId, id));
     return { ...r, lines };
   }

@@ -1,5 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { and, asc, desc, eq, exists, gt, ilike, inArray, isNull, ne, or, sql, type SQL } from 'drizzle-orm';
+import { and, asc, desc, eq, exists, gt, inArray, isNull, ne, or, sql, type SQL } from 'drizzle-orm';
 import type { PgColumn } from 'drizzle-orm/pg-core';
 import { DB, type Db, type DbOrTx } from '../../db/db.module.js';
 import { runTx } from '../../db/tx.js';
@@ -12,7 +12,7 @@ import { slug } from '../../common/numbers.js';
 import { page, type Page } from '../../common/pagination.js';
 import { assertVersion } from '../../common/version.js';
 import { AuditService } from '../audit/audit.service.js';
-import type { ProductDto, ProductListQuery, VariantDto } from './catalog.dto.js';
+import type { BranchPriceDto, ProductDto, ProductListQuery, VariantDto } from './catalog.dto.js';
 
 /** Frontend `Product` bilan bir xil shakl (TZ 9.4, 14.3). */
 export interface ProductView {
@@ -136,13 +136,15 @@ export class CatalogService {
     }
     if (q.q?.trim()) {
       const term = q.q.trim();
-      const like = `%${term}%`;
+      // lower(col) like — `lower(...)` ustidagi trigram (gin) indekslar ishlaydi; ILIKE bu indekslarni ishlatmaydi
+      const like = `%${term.toLowerCase()}%`;
+      const lk = (col: PgColumn) => sql`lower(${col}) like ${like}`;
       where.push(
         or(
-          ilike(products.name, like),
-          ilike(products.sku, like),
-          exists(this.db.select({ x: sql`1` }).from(productBarcodes).where(and(eq(productBarcodes.productId, products.id), ilike(productBarcodes.barcode, like)))),
-          exists(this.db.select({ x: sql`1` }).from(productVariants).where(and(eq(productVariants.productId, products.id), isNull(productVariants.deletedAt), or(ilike(productVariants.name, like), ilike(productVariants.sku, like))))),
+          lk(products.name),
+          lk(products.sku),
+          exists(this.db.select({ x: sql`1` }).from(productBarcodes).where(and(eq(productBarcodes.productId, products.id), lk(productBarcodes.barcode)))),
+          exists(this.db.select({ x: sql`1` }).from(productVariants).where(and(eq(productVariants.productId, products.id), isNull(productVariants.deletedAt), or(lk(productVariants.name), lk(productVariants.sku))))),
         )!,
       );
     }
@@ -378,6 +380,34 @@ export class CatalogService {
       }
       await this.audit.log(user, { action: 'delete', module: 'Mahsulotlar', targetId: id, targetName: p.name, details: `O'chirildi (SKU: ${p.sku})` }, tx);
     });
+  }
+
+  /* ───────── Filial narxi (TZ 7.3) ───────── */
+
+  async setBranchPrice(user: AuthUser, branchId: string, productId: string, dto: BranchPriceDto): Promise<ProductView> {
+    const [p] = await this.db.select({ id: products.id, name: products.name, isVariable: products.isVariable }).from(products).where(and(eq(products.id, productId), isNull(products.deletedAt))).limit(1);
+    if (!p) throw notFound('Mahsulot');
+    if (p.isVariable !== !!dto.variantId) throw unprocessable('validation_failed', p.isVariable ? 'Variantli mahsulotda narx variant uchun belgilanadi' : "Variantsiz mahsulotda variantId bo'lmaydi");
+    if (dto.variantId) {
+      const [v] = await this.db.select({ id: productVariants.id }).from(productVariants).where(and(eq(productVariants.id, dto.variantId), eq(productVariants.productId, productId), isNull(productVariants.deletedAt))).limit(1);
+      if (!v) throw notFound('Variant');
+    }
+    await runTx(this.db, async (tx) => {
+      const [existing] = await tx.select({ id: branchPrices.id }).from(branchPrices).where(and(eq(branchPrices.branchId, branchId), eq(branchPrices.productId, productId), dto.variantId ? eq(branchPrices.variantId, dto.variantId) : isNull(branchPrices.variantId))).limit(1);
+      const row = { retailPrice: dto.retailPrice, wholesalePrice: dto.wholesalePrice ?? null };
+      if (existing) await tx.update(branchPrices).set(row).where(eq(branchPrices.id, existing.id));
+      else await tx.insert(branchPrices).values({ branchId, productId, variantId: dto.variantId ?? null, ...row });
+      await this.audit.log(user, { action: 'edit', module: 'Mahsulotlar', targetId: productId, targetName: p.name, branchId, details: `Filial narxi: ${dto.retailPrice.toLocaleString('ru-RU')} so'm${dto.variantId ? ' (variant)' : ''}` }, tx);
+    });
+    return this.get(user, branchId, productId);
+  }
+
+  async clearBranchPrice(user: AuthUser, branchId: string, productId: string, variantId?: string) {
+    const [p] = await this.db.select({ name: products.name }).from(products).where(eq(products.id, productId)).limit(1);
+    if (!p) throw notFound('Mahsulot');
+    const r = await this.db.delete(branchPrices).where(and(eq(branchPrices.branchId, branchId), eq(branchPrices.productId, productId), variantId ? eq(branchPrices.variantId, variantId) : isNull(branchPrices.variantId))).returning({ id: branchPrices.id });
+    if (r.length) await this.audit.log(user, { action: 'edit', module: 'Mahsulotlar', targetId: productId, targetName: p.name, branchId, details: 'Filial narxi olib tashlandi (umumiy narx)' });
+    return this.get(user, branchId, productId);
   }
 
   private summary(dto: ProductDto, sku: string) {

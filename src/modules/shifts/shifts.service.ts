@@ -139,9 +139,19 @@ export class ShiftsService {
     });
   }
 
-  async report(id: string) {
+  /** Yopilgan smenaning muzlatilgan jamlari storno/xarajat o'chirilgandan keyin qayta hisoblanadi (Z-hisobot eskirib qolmasin). */
+  async refreezeIfClosed(tx: DbOrTx, shiftId: string | null | undefined) {
+    if (!shiftId) return;
+    const [s] = await tx.select({ id: shifts.id, closedAt: shifts.closedAt, openingCash: shifts.openingCash }).from(shifts).where(eq(shifts.id, shiftId)).limit(1);
+    if (!s?.closedAt) return;
+    const totals = await this.totals(shiftId, tx);
+    await tx.update(shifts).set({ totals: totals as unknown as Record<string, unknown>, expectedCash: s.openingCash + totals.cash - totals.cashOut }).where(eq(shifts.id, shiftId));
+  }
+
+  async report(id: string, user?: AuthUser) {
     const [s] = await this.db.select().from(shifts).where(eq(shifts.id, id)).limit(1);
     if (!s) throw notFound('Smena');
+    if (user && !user.allBranches && !user.branchIds.includes(s.branchId)) throw forbidden("Bu filialga kirish huquqingiz yo'q", 'branch_forbidden');
     const totals = s.closedAt && s.totals ? (s.totals as unknown as ShiftTotals) : await this.totals(id);
     const methods = await this.db.select({ code: paymentMethods.code, label: paymentMethods.label }).from(paymentMethods);
     return { ...s, totals, expectedCash: s.expectedCash ?? s.openingCash + totals.cash - totals.cashOut, methodLabels: Object.fromEntries(methods.map((m) => [m.code, m.label])) };

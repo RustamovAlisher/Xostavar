@@ -1,12 +1,12 @@
 import { INestApplication } from '@nestjs/common';
-import { as, code, createApp, seeded, uniq, type Client, type Seeded } from './helpers.js';
+import { as, code, createApp, seeded, uniq, type Client, type Seeded, today as todayStr } from './helpers.js';
 
 describe('expenses (TZ 7.11, 9.12)', () => {
   let app: INestApplication;
   let s: Seeded;
   let branch: string;
   let c: Client;
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayStr();
   let cat: string;
   beforeAll(async () => {
     app = await createApp();

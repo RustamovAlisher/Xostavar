@@ -1,5 +1,5 @@
 import { INestApplication } from '@nestjs/common';
-import { as, code, createApp, ensureShift, makeProduct, seeded, uniq, type Client, type Seeded } from './helpers.js';
+import { as, code, createApp, ensureShift, makeProduct, seeded, uniq, type Client, type Seeded, today as todayStr } from './helpers.js';
 
 const phone = () => '+998 9' + String(Math.floor(10000000 + Math.random() * 89999999));
 
@@ -140,7 +140,7 @@ describe('sales (TZ 8, 9.6, 20)', () => {
       expect(r.body).toMatchObject({ paymentSummary: 'cash', totalAmount: 195000, paidAmount: 45000, remainingDebt: 150000, customerDebtAfter: 150000, customerName: 'Nasiya Mijoz' });
       const cu = (await c.get(`/customers/${customer.id}`)).body;
       expect(cu.totalDebtUZS).toBe(150000);
-      expect(cu.dueDate > new Date().toISOString().slice(0, 10)).toBe(true);
+      expect(cu.dueDate > todayStr()).toBe(true);
       // to'liq nasiya (to'lovsiz)
       const full = await c.post('/sales', { lines: [{ productId: cement.id, unit: 'bag', qty: 1 }], customerId: customer.id, onCredit: true });
       expect(full.body).toMatchObject({ paymentSummary: 'debt', paidAmount: 0, remainingDebt: 65000, customerDebtAfter: 215000 });
@@ -206,7 +206,7 @@ describe('sales (TZ 8, 9.6, 20)', () => {
       expect(r.status).toBe(201);
       expect(r.body).toMatchObject({ type: 'debt_payment', totalAmount: 50000, paidAmount: 50000, paymentSummary: 'card', customerDebtAfter: before - 50000, customerName: 'Nasiya Mijoz' });
       expect(r.body.number).toMatch(/-\d{4}$/);
-      expect((await c.get(`/customers/${customer.id}`)).body).toMatchObject({ totalDebtUZS: before - 50000, lastPaidDate: new Date().toISOString().slice(0, 10) });
+      expect((await c.get(`/customers/${customer.id}`)).body).toMatchObject({ totalDebtUZS: before - 50000, lastPaidDate: todayStr() });
       expect(code(await c.post(`/customers/${customer.id}/payments`, { amount: 9_999_999, methodId: s.methods.cash }))).toBe('validation_failed');
       expect(code(await c.post(`/customers/${customer.id}/payments`, { amount: 100, methodId: s.methods.debt }))).toBe('payment_method_disabled');
       expect((await c.post(`/customers/${customer.id}/payments`, { amount: 0, methodId: s.methods.cash })).status).toBe(400);
@@ -261,11 +261,14 @@ describe('sales (TZ 8, 9.6, 20)', () => {
       const num = all.items[0].number;
       expect((await c.get(`/sales?q=${num}`)).body.items[0].number).toBe(num);
       const kassir = await as(app, 'kassir');
-      const mine = (await kassir.get('/sales?pageSize=200')).body.items as { cashierName: string }[];
+      const mine = (await kassir.get('/sales?pageSize=200')).body.items as { id: string; type: string; cashierName: string }[];
       expect(mine.every((x) => x.cashierName === 'Jasur Mirzayev')).toBe(true);
-      // bitta chek — kassir foyda ko'rmaydi
+      // boshqa kassirning cheki id bilan ham ochilmaydi; o'z cheki ochiladi, lekin foyda/tannarx ko'rinmaydi
       const firstSale = all.items.find((x: { type: string }) => x.type === 'sale');
-      const one = (await kassir.get(`/sales/${firstSale.id}`)).body;
+      expect((await kassir.get(`/sales/${firstSale.id}`)).status).toBe(403);
+      const mineSale = mine.find((x) => x.type === 'sale');
+      expect(mineSale).toBeDefined();
+      const one = (await kassir.get(`/sales/${mineSale!.id}`)).body;
       expect(one.profit).toBeUndefined();
       expect(one.lines[0].costPerBase).toBeUndefined();
     });

@@ -1,5 +1,5 @@
 import { INestApplication } from '@nestjs/common';
-import { as, code, createApp, makeProduct, seeded, uniq, type Client, type Seeded } from './helpers.js';
+import { as, code, createApp, makeProduct, seeded, uniq, type Client, type Seeded, today as todayStr } from './helpers.js';
 
 const phone = () => '+998 9' + String(Math.floor(10000000 + Math.random() * 89999999));
 
@@ -9,7 +9,7 @@ describe('reports (TZ 8.10, 9.9)', () => {
   let s: Seeded;
   let branch: string;
   let c: Client;
-  const today = new Date().toISOString().slice(0, 10);
+  const today = todayStr();
   beforeAll(async () => {
     app = await createApp();
     s = await seeded(app);

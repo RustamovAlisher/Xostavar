@@ -1,7 +1,7 @@
 import { Body, Controller, Delete, Get, HttpCode, Param, ParseUUIDPipe, Post, Put, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
-import { CurrentUser, Perms, Req, type AuthRequest, type AuthUser } from '../../common/auth-context.js';
-import { ProductDto, ProductListQuery } from './catalog.dto.js';
+import { BranchId, BranchScoped, CurrentUser, Perms, Req, type AuthRequest, type AuthUser } from '../../common/auth-context.js';
+import { BranchPriceDto, ProductDto, ProductListQuery } from './catalog.dto.js';
 import { CatalogService } from './catalog.service.js';
 import { InventoryService } from '../inventory/inventory.service.js';
 
@@ -53,6 +53,21 @@ export class CatalogController {
   @Perms('edit_product')
   update(@CurrentUser() u: AuthUser, @Req() req: AuthRequest, @Param('id', ParseUUIDPipe) id: string, @Body() dto: ProductDto) {
     return this.catalog.update(u, req.branchId ?? null, id, dto);
+  }
+
+  /** Filial bo'yicha narx (TZ 7.3, 14.4 (2)) — faqat egasi (edit_product). */
+  @Put(':id/branch-price')
+  @Perms('edit_product')
+  @BranchScoped()
+  setBranchPrice(@CurrentUser() u: AuthUser, @BranchId() branchId: string, @Param('id', ParseUUIDPipe) id: string, @Body() dto: BranchPriceDto) {
+    return this.catalog.setBranchPrice(u, branchId, id, dto);
+  }
+
+  @Delete(':id/branch-price')
+  @Perms('edit_product')
+  @BranchScoped()
+  clearBranchPrice(@CurrentUser() u: AuthUser, @BranchId() branchId: string, @Param('id', ParseUUIDPipe) id: string, @Query('variantId') variantId?: string) {
+    return this.catalog.clearBranchPrice(u, branchId, id, variantId || undefined);
   }
 
   @Delete(':id')

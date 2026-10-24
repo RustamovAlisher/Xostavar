@@ -2,7 +2,7 @@ import { Inject, Injectable } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import argon2 from 'argon2';
-import { and, eq, gt, inArray, isNull, or, sql } from 'drizzle-orm';
+import { and, eq, gt, inArray, isNull, lt, or, sql } from 'drizzle-orm';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
 import { DB, type Db } from '../../db/db.module.js';
 import { branches, loginAttempts, roles, sessions, userBranches, users } from '../../db/schema/index.js';
@@ -119,6 +119,7 @@ export class AuthService {
 
     const ok = row ? await argon2.verify(row.u.passwordHash, password) : false;
     await this.db.insert(loginAttempts).values({ login: key, ip: meta.ip ?? null, success: ok });
+    if (Math.random() < 0.02) void this.db.delete(loginAttempts).where(lt(loginAttempts.createdAt, new Date(Date.now() - 86_400_000))).catch(() => undefined);
     if (!row || !ok) {
       await this.audit.log(null, { action: 'login_failed', module: 'Xavfsizlik', targetName: key, details: 'Login yoki parol xato', ip: meta.ip, requestId: meta.requestId });
       throw unauthorized('Login yoki parol xato');

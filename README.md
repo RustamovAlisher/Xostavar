@@ -65,7 +65,7 @@ src/
 ## Testlar
 
 ```bash
-npm test            # unit: hisob funksiyalari (narx, birlik, kesim, tannarx, telefon, sana) — bazasiz
+npm test            # unit: hisob funksiyalari (narx, birlik, kesim, tannarx, telefon, sana), PG xatolari tarjimasi, validatsiya xabarlari, runTx qayta urinish — bazasiz
 npm run test:e2e    # integratsiya: haqiqiy Postgres, alohida `xostavar_test` bazasi (docker ichida yaratiladi)
 ```
 
@@ -87,6 +87,10 @@ Integratsiya testlari har yurishda test bazasini tozalab (`drop schema` → migr
 | `audit` | filtrlar, filial doirasi, umumiy amallar |
 | `permissions` | huquqlar matritsasi: har endpoint ruxsatsiz rolda 403 |
 | `concurrency` | 20 parallel sotuv (qoldiq manfiy emas), parallel kirim+sotuv, parallel qarz to'lovlari, butun baza yaxlitligi |
+| `errors` | global xato formati: 404/400/413/422 tuzilmasi, `requestId`, validatsiya `details.errors` |
+| `scope` | id bilan so'rashda filial/egalik chegarasi, yopilgan smena Z-hisobotining storno/chiqim o'chirilgandan keyin qayta hisoblanishi, filial narxi, quote ogohlantirishlari, qidiruv indekslari |
+
+Sana testlarda `today()` yordamchisi bilan Toshkent vaqti bo'yicha olinadi (server ham shu zonada hisoblaydi).
 
 Test bazasi manzili: `TEST_DATABASE_URL` (standart `postgres://xostavar:xostavar@localhost:5433/xostavar_test`).
 

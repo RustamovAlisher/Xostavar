@@ -36,6 +36,7 @@ export const products = pgTable(
     index('products_category_idx').on(t.categoryId),
     // Nom bo'yicha qidiruv (pg_trgm, migratsiyada kengaytma yoqiladi)
     index('products_name_trgm_idx').using('gin', sql`lower(${t.name}) gin_trgm_ops`),
+    index('products_sku_trgm_idx').using('gin', sql`lower(${t.sku}) gin_trgm_ops`),
   ],
 );
 
@@ -55,7 +56,12 @@ export const productVariants = pgTable(
     createdAt: createdAt(),
     updatedAt: updatedAt(),
   },
-  (t) => [uniqueIndex('product_variants_sku_lower_uq').on(sqlLower(t.sku)), index('product_variants_product_idx').on(t.productId)],
+  (t) => [
+    uniqueIndex('product_variants_sku_lower_uq').on(sqlLower(t.sku)),
+    index('product_variants_product_idx').on(t.productId),
+    index('product_variants_name_trgm_idx').using('gin', sql`lower(${t.name}) gin_trgm_ops`),
+    index('product_variants_sku_trgm_idx').using('gin', sql`lower(${t.sku}) gin_trgm_ops`),
+  ],
 );
 
 /** Shtrix-kodlar: mahsulot, variant va qadoq (unit) uchun — butun tizimda unikal (TZ 7.3). */
@@ -71,7 +77,7 @@ export const productBarcodes = pgTable(
     unit: text('unit').references(() => units.id, { onDelete: 'restrict' }),
     barcode: text('barcode').notNull(),
   },
-  (t) => [uniqueIndex('product_barcodes_barcode_lower_uq').on(sqlLower(t.barcode)), index('product_barcodes_product_idx').on(t.productId)],
+  (t) => [uniqueIndex('product_barcodes_barcode_lower_uq').on(sqlLower(t.barcode)), index('product_barcodes_product_idx').on(t.productId), index('product_barcodes_trgm_idx').using('gin', sql`lower(${t.barcode}) gin_trgm_ops`)],
 );
 
 /** 1 `unit` = `factor` × asosiy birlik. Variantdagi yozuv otadagi bir xil birlikni ustidan yozadi. */
