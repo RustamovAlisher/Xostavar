@@ -50,3 +50,9 @@ export const unprocessable = (code: ErrorCode, message: string, details?: Record
   new AppError(code, message, HttpStatus.UNPROCESSABLE_ENTITY, details);
 export const badRequest = (message: string, details?: Record<string, unknown>) =>
   new AppError('validation_failed', message, HttpStatus.BAD_REQUEST, details);
+
+/** Postgres unikal indeks buzilishi (Drizzle xatoni `cause` ichiga o'raydi). */
+export function isUniqueViolation(e: unknown): boolean {
+  const code = (e as { code?: string })?.code ?? (e as { cause?: { code?: string } })?.cause?.code;
+  return code === '23505';
+}

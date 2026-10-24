@@ -3,7 +3,7 @@ import { and, desc, eq, gte, isNull, lte, sql } from 'drizzle-orm';
 import { DB, type Db, type DbOrTx } from '../../db/db.module.js';
 import { businessRules, expenses, paymentMethods, salePayments, sales, shifts } from '../../db/schema/index.js';
 import type { AuthUser } from '../../common/auth-context.js';
-import { conflict, forbidden, notFound, unprocessable } from '../../common/errors.js';
+import { conflict, forbidden, isUniqueViolation, notFound, unprocessable } from '../../common/errors.js';
 import { page, type PageQuery } from '../../common/pagination.js';
 import { AuditService } from '../audit/audit.service.js';
 
@@ -61,7 +61,7 @@ export class ShiftsService {
       return s;
     } catch (e) {
       // Qisman unikal indeks: ikki kassir bir vaqtda ochsa — ikkinchisi 409
-      if ((e as { code?: string }).code === '23505') throw conflict('in_use', 'Smena allaqachon ochiq');
+      if (isUniqueViolation(e)) throw conflict('in_use', 'Smena allaqachon ochiq');
       throw e;
     }
   }

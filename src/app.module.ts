@@ -42,7 +42,8 @@ import { HealthController } from './health.controller.js';
       },
     }),
     // Umumiy rate limit (TZ 6.3): 300 so'rov / daqiqa
-    ThrottlerModule.forRoot([{ ttl: 60_000, limit: 300 }]),
+    // Test muhitida o'chiriladi (hamma so'rov bitta IP dan keladi)
+    ThrottlerModule.forRoot({ throttlers: [{ ttl: 60_000, limit: 300 }], skipIf: () => process.env.NODE_ENV === 'test' }),
     DbModule,
     AuditModule,
     SettingsModule,

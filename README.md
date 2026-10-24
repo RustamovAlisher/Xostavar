@@ -62,6 +62,34 @@ src/
     audit       audit jurnali
 ```
 
+## Testlar
+
+```bash
+npm test            # unit: hisob funksiyalari (narx, birlik, kesim, tannarx, telefon, sana) — bazasiz
+npm run test:e2e    # integratsiya: haqiqiy Postgres, alohida `xostavar_test` bazasi (docker ichida yaratiladi)
+```
+
+Integratsiya testlari har yurishda test bazasini tozalab (`drop schema` → migratsiya → seed), Nest ilovasini xotirada ko'tarib, HTTP orqali tekshiradi. Fayllar ketma-ket ishlaydi, har biri o'z ma'lumotini (filial, mahsulot, mijoz) yaratadi:
+
+| Fayl | Nima tekshiriladi |
+|---|---|
+| `auth` | login, bloklash, majburiy parol almashtirish, parol siyosati, refresh rotation va qayta ishlatish, sessiyalar, nofaol xodim |
+| `users` | yaratish/tahrirlash qoidalari, o'z-o'zini o'zgartirish taqiqi, oxirgi admin (kesh poygasi bilan), filial admini doirasi, rollar |
+| `branches` | kod, nofaol qilish qoidalari, nofaol filial xodimi, `X-Branch-Id`, overview |
+| `settings` | butun to'plam saqlash, validatsiya, `in_use`, to'lov usullari qoidalari, reset |
+| `catalog` | variantlar, avto SKU, kodlar unikalligi, qidiruv, lookup, tannarx yashirish, variant o'chirish, soft/hard delete |
+| `inventory` | kirim va o'rtacha tannarx, idempotentlik, filial izolyatsiyasi, jurnal, tuzatish, yaxlitlik |
+| `customers` | telefon, filtrlar, nasiya muddati qoidasi, ledger |
+| `shifts` | bitta ochiq smena, egalik, Z-hisobot, `require_shift` |
+| `sales` | quote, oddiy/aralash/nasiya sotuv, limit, chegirma chegarasi, kesim, chek raqami, idempotentlik, storno, qarz to'lovi, ro'yxat |
+| `expenses` | kassadan chiqim va smena, huquqlar, ro'yxat |
+| `reports` | dashboard va barcha hisobotlar aniq raqamlar bilan |
+| `audit` | filtrlar, filial doirasi, umumiy amallar |
+| `permissions` | huquqlar matritsasi: har endpoint ruxsatsiz rolda 403 |
+| `concurrency` | 20 parallel sotuv (qoldiq manfiy emas), parallel kirim+sotuv, parallel qarz to'lovlari, butun baza yaxlitligi |
+
+Test bazasi manzili: `TEST_DATABASE_URL` (standart `postgres://xostavar:xostavar@localhost:5433/xostavar_test`).
+
 ## Qoidalar (qisqa)
 
 - **Filial konteksti:** `X-Branch-Id` sarlavhasi; bo'lmasa xodimning standart filiali (egasi uchun birinchi faol filial). Biriktirilmagan filial → `403 branch_forbidden`.

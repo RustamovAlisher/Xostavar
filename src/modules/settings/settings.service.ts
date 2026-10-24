@@ -56,8 +56,10 @@ export class SettingsService {
   async saveAll(actor: AuthUser, dto: SettingsBundleDto) {
     this.validateBundle(dto);
     await this.db.transaction(async (tx) => {
-      await this.saveUnits(tx, dto);
+      // Birliklar avval yoziladi (kategoriya ularga tayanadi), o'chirilganlari kategoriyalardan keyin (FK)
+      await this.upsertUnits(tx, dto);
       await this.saveCategories(tx, dto);
+      await this.deleteRemovedUnits(tx, dto);
       await this.saveSizePresets(tx, dto);
       await this.saveNamed(tx, customerGroups, dto.customerGroups, 'Mijoz guruhi', async (ids) => {
         const [c] = await tx.select({ name: customers.name }).from(customers).where(and(inArray(customers.groupId, ids), isNull(customers.deletedAt))).limit(1);
@@ -79,9 +81,9 @@ export class SettingsService {
         });
       const r = dto.rules;
       const rulesRow = {
-        pieceLengthMeters: String(r.pieceLengthMeters), defaultCutLengthMeters: String(r.defaultCutLengthMeters), cutDeductionMode: r.cutDeductionMode,
-        defaultMinStock: String(r.defaultMinStock), defaultCreditDays: r.defaultCreditDays, defaultCreditLimit: r.defaultCreditLimit,
-        vatPct: String(r.vatPct), estimatedMarginPct: String(r.estimatedMarginPct), quickDownPaymentPcts: r.quickDownPaymentPcts,
+        pieceLengthMeters: r.pieceLengthMeters, defaultCutLengthMeters: r.defaultCutLengthMeters, cutDeductionMode: r.cutDeductionMode,
+        defaultMinStock: r.defaultMinStock, defaultCreditDays: r.defaultCreditDays, defaultCreditLimit: r.defaultCreditLimit,
+        vatPct: r.vatPct, estimatedMarginPct: r.estimatedMarginPct, quickDownPaymentPcts: r.quickDownPaymentPcts,
         allowNegativeStock: r.allowNegativeStock, requireShift: r.requireShift, cashierMaxDiscount: r.cashierMaxDiscount,
       };
       await tx.insert(businessRules).values({ id: 1, ...rulesRow }).onConflictDoUpdate({ target: businessRules.id, set: { ...rulesRow, version: sql`${businessRules.version} + 1` } });
@@ -120,7 +122,14 @@ export class SettingsService {
     if (!d.paymentMethods.some((m) => m.enabled && m.kind !== 'debt')) throw err("Kamida bitta oddiy (qarz bo'lmagan) to'lov usuli yoqilgan bo'lsin");
   }
 
-  private async saveUnits(tx: DbOrTx, d: SettingsBundleDto) {
+  private async upsertUnits(tx: DbOrTx, d: SettingsBundleDto) {
+    for (const [i, u] of d.units.entries()) {
+      const row = { name: u.name.trim(), short: u.short.trim(), precision: u.precision, sortOrder: i };
+      await tx.insert(units).values({ id: u.id, ...row }).onConflictDoUpdate({ target: units.id, set: row });
+    }
+  }
+
+  private async deleteRemovedUnits(tx: DbOrTx, d: SettingsBundleDto) {
     const keep = d.units.map((u) => u.id);
     // O'chirilayotgan birlik ishlatilayotgan bo'lsa — 409 (mahsulot, konversiya, chek, kirim, kategoriya shabloni)
     const removed = await tx.select({ id: units.id }).from(units).where(notInArray(units.id, keep));
@@ -133,10 +142,6 @@ export class SettingsService {
       if (used) throw conflict('in_use', `"${id}" birligi ishlatilmoqda, o'chirib bo'lmaydi`, { unit: id });
     }
     if (removed.length) await tx.delete(units).where(inArray(units.id, removed.map((r) => r.id)));
-    for (const [i, u] of d.units.entries()) {
-      const row = { name: u.name.trim(), short: u.short.trim(), precision: u.precision, sortOrder: i };
-      await tx.insert(units).values({ id: u.id, ...row }).onConflictDoUpdate({ target: units.id, set: row });
-    }
   }
 
   private async saveCategories(tx: DbOrTx, d: SettingsBundleDto) {
@@ -161,7 +166,7 @@ export class SettingsService {
   private async saveSizePresets(tx: DbOrTx, d: SettingsBundleDto) {
     await tx.delete(sizePresets);
     if (d.sizePresets.length) {
-      await tx.insert(sizePresets).values(d.sizePresets.map((s, i) => ({ id: s.id, categoryId: s.categoryId, name: s.name.trim(), kgPerMeter: s.kgPerMeter != null ? String(s.kgPerMeter) : null, sortOrder: i })));
+      await tx.insert(sizePresets).values(d.sizePresets.map((s, i) => ({ id: s.id, categoryId: s.categoryId, name: s.name.trim(), kgPerMeter: s.kgPerMeter ?? null, sortOrder: i })));
     }
   }
 

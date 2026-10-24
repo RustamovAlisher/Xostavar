@@ -341,8 +341,17 @@ export class UsersService {
 
   async deleteRole(actor: AuthUser, id: string) {
     const r = await this.roleOrThrow(id);
-    const [{ n }] = await this.db.select({ n: sql<number>`count(*)::int` }).from(users).where(and(eq(users.roleId, id), isNull(users.deletedAt)));
+    const [{ n, deleted }] = await this.db
+      .select({ n: sql<number>`count(case when ${users.deletedAt} is null then 1 end)::int`, deleted: sql<number>`count(case when ${users.deletedAt} is not null then 1 end)::int` })
+      .from(users)
+      .where(eq(users.roleId, id));
     if (n > 0) throw conflict('in_use', `${n} ta xodim shu rolda`, { users: n });
+    if (deleted > 0) {
+      // O'chirilgan xodimlar tarix uchun saqlanadi — ularni standart "Kassir" roliga o'tkazib, rolni o'chiramiz
+      const [fallback] = await this.db.select({ id: roles.id }).from(roles).where(and(ne(roles.id, id), eq(roles.allBranches, false))).orderBy(asc(roles.sortOrder)).limit(1);
+      if (!fallback) throw conflict('in_use', "O'chirilgan xodimlar shu rolga bog'langan");
+      await this.db.update(users).set({ roleId: fallback.id }).where(and(eq(users.roleId, id), sql`${users.deletedAt} is not null`));
+    }
     await this.db.delete(roles).where(eq(roles.id, id));
     await this.audit.log(actor, { action: 'delete', module: 'Sozlamalar', targetId: id, targetName: r.name, details: "Rol o'chirildi" });
   }

@@ -212,7 +212,7 @@ export class ReportsService {
     const sc = this.scope(user, branchId, q.branchId);
     const dayExpr = this.day(sales.createdAt);
     return this.db
-      .select({ cashierId: sales.cashierId, name: users.name, receipts: sql<number>`count(case when ${sales.type} = 'sale' then 1 end)::int`, total: sql<number>`coalesce(sum(case when ${sales.type} = 'sale' then ${sales.totalAmount} end), 0)::bigint`, paid: sql<number>`coalesce(sum(${sales.paidAmount}), 0)::bigint`, voided: sql<number>`count(case when ${sales.status} = 'voided' then 1 end)::int` })
+      .select({ cashierId: sales.cashierId, name: users.name, receipts: sql<number>`count(case when ${sales.type} = 'sale' and ${sales.status} = 'completed' then 1 end)::int`, total: sql<number>`coalesce(sum(case when ${sales.type} = 'sale' and ${sales.status} = 'completed' then ${sales.totalAmount} end), 0)::bigint`, paid: sql<number>`coalesce(sum(case when ${sales.status} = 'completed' then ${sales.paidAmount} end), 0)::bigint`, voided: sql<number>`count(case when ${sales.status} = 'voided' then 1 end)::int` })
       .from(sales)
       .innerJoin(users, eq(users.id, sales.cashierId))
       .where(and(sc, gte(dayExpr, sql`${q.from}::date`), lte(dayExpr, sql`${q.to}::date`)))

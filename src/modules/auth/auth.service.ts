@@ -14,6 +14,7 @@ import { AuditService } from '../audit/audit.service.js';
 import { HttpStatus } from '@nestjs/common';
 
 const MAX_FAILED = 5;
+const MAX_FAILED_PER_IP = 30;
 const LOCK_MINUTES = 15;
 /** Foydalanuvchi ma'lumoti har so'rovda bazadan o'qilmasin: qisqa kesh (huquq o'zgarsa `invalidate`). */
 const USER_CACHE_MS = 10_000;
@@ -41,6 +42,7 @@ export class AuthService {
   invalidate(userId?: string) {
     if (userId) this.cache.delete(userId);
     else this.cache.clear();
+    this.sessionCache.clear();
   }
 
   /** 2 ta so'rov (user+role, filiallar) — N+1 yo'q, 10 s kesh. */
@@ -77,19 +79,34 @@ export class AuthService {
     return user;
   }
 
+  /** Sessiya tirikmi (bekor qilinmagan, muddati o'tmagan). Qisqa kesh — har so'rovda bazaga bormaslik uchun. */
+  private readonly sessionCache = new Map<string, { at: number; alive: boolean }>();
+  async isSessionAlive(sessionId: string): Promise<boolean> {
+    const hit = this.sessionCache.get(sessionId);
+    if (hit && Date.now() - hit.at < 5_000 && hit.alive) return true;
+    const [s] = await this.db.select({ revokedAt: sessions.revokedAt, expiresAt: sessions.expiresAt }).from(sessions).where(eq(sessions.id, sessionId)).limit(1);
+    const alive = !!s && !s.revokedAt && s.expiresAt > new Date();
+    this.sessionCache.set(sessionId, { at: Date.now(), alive });
+    return alive;
+  }
+
   /* ───────── Login ───────── */
 
   async login(login: string, password: string, meta: { ip?: string; userAgent?: string; requestId?: string }) {
     const key = login.trim().toLowerCase();
     if (!key || !password) throw unauthorized('Login va parolni kiriting');
 
-    // Bloklash: oxirgi 15 daqiqada 5 ta muvaffaqiyatsiz urinish (login yoki IP bo'yicha)
+    // Bloklash (TZ 6.2): oxirgi 15 daqiqada shu login uchun 5 ta xato, yoki shu IP dan 30 ta xato
+    // (do'konda hamma kassa bitta IP orqali chiqadi — bitta xato parol hammani bloklamasin)
     const since = new Date(Date.now() - LOCK_MINUTES * 60_000);
-    const [{ failed }] = await this.db
-      .select({ failed: sql<number>`count(*)::int` })
+    const [{ byLogin, byIp }] = await this.db
+      .select({
+        byLogin: sql<number>`count(case when ${loginAttempts.login} = ${key} then 1 end)::int`,
+        byIp: sql<number>`count(case when ${loginAttempts.ip} = ${meta.ip ?? null}::inet then 1 end)::int`,
+      })
       .from(loginAttempts)
-      .where(and(eq(loginAttempts.success, false), gt(loginAttempts.createdAt, since), meta.ip ? or(eq(loginAttempts.login, key), eq(loginAttempts.ip, meta.ip)) : eq(loginAttempts.login, key)));
-    if (failed >= MAX_FAILED) {
+      .where(and(eq(loginAttempts.success, false), gt(loginAttempts.createdAt, since)));
+    if (byLogin >= MAX_FAILED || byIp >= MAX_FAILED_PER_IP) {
       throw new AppError('rate_limited', `Juda ko'p urinish. ${LOCK_MINUTES} daqiqadan keyin qayta urinib ko'ring`, HttpStatus.TOO_MANY_REQUESTS);
     }
 
@@ -173,10 +190,12 @@ export class AuthService {
 
   async logout(sessionId: string) {
     await this.db.update(sessions).set({ revokedAt: new Date() }).where(and(eq(sessions.id, sessionId), isNull(sessions.revokedAt)));
+    this.sessionCache.delete(sessionId);
   }
 
   async logoutAll(userId: string) {
     await this.db.update(sessions).set({ revokedAt: new Date() }).where(and(eq(sessions.userId, userId), isNull(sessions.revokedAt)));
+    this.sessionCache.clear();
   }
 
   /** Foydalanuvchi nofaol qilinganda barcha sessiyalari darhol bekor (TZ 3.3 (5)). */
@@ -195,6 +214,7 @@ export class AuthService {
 
   async revokeSession(userId: string, sessionId: string) {
     await this.db.update(sessions).set({ revokedAt: new Date() }).where(and(eq(sessions.id, sessionId), eq(sessions.userId, userId)));
+    this.sessionCache.delete(sessionId);
   }
 
   /* ───────── Parol ───────── */
@@ -223,6 +243,7 @@ export class AuthService {
       .set({ revokedAt: new Date() })
       .where(and(eq(sessions.userId, user.id), isNull(sessions.revokedAt), sql`${sessions.id} <> ${keepSessionId}`));
     this.invalidate(user.id);
+    this.sessionCache.clear();
     await this.audit.log(user, { action: 'user_update', module: 'Xodimlar', targetId: user.id, targetName: user.name, details: "O'z parolini almashtirdi" });
   }
 }

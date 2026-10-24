@@ -131,9 +131,8 @@ export class CustomersService {
     let amount = p.amount;
     // Storno: mijoz chekdan keyin qisman to'lagan bo'lsa qarz 0 gacha kamayadi, ortig'i naqd qaytariladi (chaqiruvchi auditga yozadi)
     if (p.capAtZero && c.totalDebt + amount < 0) amount = -c.totalDebt;
-    const after = c.totalDebt + amount;
-    if (after < 0) throw unprocessable('validation_failed', `Summa qarzdan katta (${c.totalDebt.toLocaleString('ru-RU')} so'm)`);
-    const set: Partial<typeof customers.$inferInsert> = { totalDebt: after };
+    if (c.totalDebt + amount < 0) throw unprocessable('validation_failed', `Summa qarzdan katta (${c.totalDebt.toLocaleString('ru-RU')} so'm)`);
+    const set: Partial<typeof customers.$inferInsert> = {};
     if (p.amount > 0 && p.dueDays != null) {
       // TZ 8.8: due_date = max(joriy muddat, bugun + N); muddat o'tgan bo'lsa yangi sana
       const today = todayISO();
@@ -141,15 +140,22 @@ export class CustomersService {
       set.dueDate = c.dueDate && c.dueDate > next && c.dueDate >= today ? c.dueDate : next;
     }
     if (p.markPaid) set.lastPaidDate = todayISO();
-    await tx.update(customers).set(set).where(eq(customers.id, c.id));
-    if (amount !== 0) await tx.insert(debtLedger).values({ customerId: c.id, branchId: p.branchId, type: p.type, amount, balanceAfter: after, refType: p.refType, refId: p.refId, userId: p.userId });
-    return { before: c.totalDebt, after, applied: amount, customer: c };
+    // Balans atomar yangilanadi (o'qib-yozish emas): qulf bilan birga ikki qavat himoya; natija ledger ga yoziladi
+    const [upd] = await tx
+      .update(customers)
+      .set({ ...set, totalDebt: sql`${customers.totalDebt} + ${amount}` })
+      .where(and(eq(customers.id, c.id), sql`${customers.totalDebt} + ${amount} >= 0`))
+      .returning({ totalDebt: customers.totalDebt });
+    if (!upd) throw unprocessable('validation_failed', `Summa qarzdan katta (${c.totalDebt.toLocaleString('ru-RU')} so'm)`);
+    const balance = upd.totalDebt;
+    if (amount !== 0) await tx.insert(debtLedger).values({ customerId: c.id, branchId: p.branchId, type: p.type, amount, balanceAfter: balance, refType: p.refType, refId: p.refId, userId: p.userId });
+    return { before: balance - amount, after: balance, applied: amount, customer: c };
   }
 
   async ledger(id: string, q: { page: number; pageSize: number; offset: number }) {
     await this.get(id);
     const [items, [{ total }]] = await Promise.all([
-      this.db.select().from(debtLedger).where(eq(debtLedger.customerId, id)).orderBy(desc(debtLedger.createdAt)).limit(q.pageSize).offset(q.offset),
+      this.db.select().from(debtLedger).where(eq(debtLedger.customerId, id)).orderBy(desc(debtLedger.seq)).limit(q.pageSize).offset(q.offset),
       this.db.select({ total: sql<number>`count(*)::int` }).from(debtLedger).where(eq(debtLedger.customerId, id)),
     ]);
     return page(items, total, q);

@@ -1,6 +1,6 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
-import { ArrayMaxSize, ArrayMinSize, IsArray, IsBoolean, IsInt, IsNumber, IsOptional, IsString, IsUUID, Matches, MaxLength, Min, ValidateNested } from 'class-validator';
+import { ArrayMaxSize, ArrayMinSize, IsArray, IsBoolean, IsInt, IsNumber, IsOptional, IsString, IsUUID, Matches, MaxLength, Min, MinLength, ValidateNested } from 'class-validator';
 import { PageQuery } from '../../common/pagination.js';
 
 export class CutDto {
@@ -35,7 +35,7 @@ export class SaleDto {
 }
 
 export class VoidSaleDto {
-  @IsString() @MaxLength(300) reason: string;
+  @IsString() @MinLength(1) @MaxLength(300) reason: string;
 }
 
 export class SalesListQuery extends PageQuery {

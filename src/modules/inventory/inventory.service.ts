@@ -42,7 +42,7 @@ export class InventoryService {
       const where = and(eq(stockLevels.branchId, branchId), eq(stockLevels.productId, k.productId), k.variantId ? eq(stockLevels.variantId, k.variantId) : isNull(stockLevels.variantId));
       let [row] = await tx.select({ id: stockLevels.id, stock: stockLevels.stock, costPrice: stockLevels.costPrice, minStock: stockLevels.minStock }).from(stockLevels).where(where).for('update');
       if (!row && create) {
-        await tx.insert(stockLevels).values({ branchId, productId: k.productId, variantId: k.variantId, stock: '0' }).onConflictDoNothing();
+        await tx.insert(stockLevels).values({ branchId, productId: k.productId, variantId: k.variantId, stock: 0 }).onConflictDoNothing();
         [row] = await tx.select({ id: stockLevels.id, stock: stockLevels.stock, costPrice: stockLevels.costPrice, minStock: stockLevels.minStock }).from(stockLevels).where(where).for('update');
       }
       out.set(key, row ? { id: row.id, stock: Number(row.stock), costPrice: row.costPrice != null ? Number(row.costPrice) : null, minStock: row.minStock != null ? Number(row.minStock) : null } : null);
@@ -56,9 +56,15 @@ export class InventoryService {
     lvl: LockedLevel,
     m: { branchId: string; productId: string; variantId: string | null; type: typeof stockMovements.$inferInsert.type; qtyBase: number; unit: string; qtyUnit: number; costPerBase?: number | null; refType?: string; refId?: string; userId: string; newCost?: number | null },
   ) {
-    const after = qty4(lvl.stock + m.qtyBase);
-    await tx.update(stockLevels).set({ stock: String(after), ...(m.newCost !== undefined ? { costPrice: m.newCost != null ? String(m.newCost) : null } : {}), version: sql`${stockLevels.version} + 1` }).where(eq(stockLevels.id, lvl.id));
-    await tx.insert(stockMovements).values({ branchId: m.branchId, productId: m.productId, variantId: m.variantId, type: m.type, qtyBase: String(qty4(m.qtyBase)), unit: m.unit, qtyUnit: String(m.qtyUnit), costPerBase: m.costPerBase != null ? String(m.costPerBase) : null, refType: m.refType ?? null, refId: m.refId ?? null, balanceAfter: String(after), userId: m.userId });
+    // Qoldiq atomar yangilanadi (stock = stock + delta); qulf bilan birga ikki qavat himoya
+    const delta = qty4(m.qtyBase);
+    const [upd] = await tx
+      .update(stockLevels)
+      .set({ stock: sql`round(${stockLevels.stock} + ${delta}, 4)`, ...(m.newCost !== undefined ? { costPrice: m.newCost } : {}), version: sql`${stockLevels.version} + 1` })
+      .where(eq(stockLevels.id, lvl.id))
+      .returning({ stock: stockLevels.stock });
+    const after = upd.stock;
+    await tx.insert(stockMovements).values({ branchId: m.branchId, productId: m.productId, variantId: m.variantId, type: m.type, qtyBase: delta, unit: m.unit, qtyUnit: m.qtyUnit, costPerBase: m.costPerBase ?? null, refType: m.refType ?? null, refId: m.refId ?? null, balanceAfter: after, userId: m.userId });
     lvl.stock = after;
     if (m.newCost !== undefined) lvl.costPrice = m.newCost ?? null;
     return after;
@@ -79,7 +85,7 @@ export class InventoryService {
       if (!product) continue;
       const variant = k.variantId ? (vs.find((v) => v.id === k.variantId && v.productId === product.id) ?? null) : null;
       if (k.variantId && !variant) continue;
-      const conv = (vid: string | null) => cs.filter((c) => c.productId === product.id && (vid ? c.variantId === vid : !c.variantId)).map((c) => ({ unit: c.unit, factor: Number(c.factor), price: c.price }));
+      const conv = (vid: string | null) => cs.filter((c) => c.productId === product.id && (vid ? c.variantId === vid : !c.variantId)).map((c) => ({ unit: c.unit, factor: c.factor, price: c.price }));
       out.set(`${k.productId}|${k.variantId ?? ''}`, {
         product, variant,
         target: { baseUnit: product.baseUnit, isDivisible: product.isDivisible, retailPrice: variant ? variant.retailPrice : product.retailPrice, conversions: conv(null), variantConversions: variant ? conv(variant.id) : undefined },
@@ -123,7 +129,7 @@ export class InventoryService {
       }
       const [r] = await tx
         .insert(stockReceipts)
-        .values({ branchId, number: next, supplierId: dto.supplierId ?? null, supplierName, invoice: dto.invoice?.trim() || null, date: dto.date ?? todayISO(), userId: user.id, userName: user.name, note: dto.note?.trim() || null, totalCost: String(calc.reduce((a, c) => a + c.totalCost, 0)) })
+        .values({ branchId, number: next, supplierId: dto.supplierId ?? null, supplierName, invoice: dto.invoice?.trim() || null, date: dto.date ?? todayISO(), userId: user.id, userName: user.name, note: dto.note?.trim() || null, totalCost: calc.reduce((a, c) => a + c.totalCost, 0) })
         .returning({ id: stockReceipts.id, number: stockReceipts.number });
       const names: string[] = [];
       for (const c of calc) {
@@ -133,7 +139,7 @@ export class InventoryService {
         await this.applyMovement(tx, lvl, { branchId, productId: c.l.productId, variantId: c.l.variantId ?? null, type: 'stock_in', qtyBase: c.qtyBase, unit: c.l.unit, qtyUnit: c.qty, costPerBase: c.costPerBase, refType: 'stock_receipt', refId: r.id, userId: user.id, newCost });
         const name = c.t.variant ? `${c.t.product.name} — ${c.t.variant.name}` : c.t.product.name;
         names.push(name);
-        await tx.insert(stockReceiptLines).values({ receiptId: r.id, productId: c.l.productId, variantId: c.l.variantId ?? null, productName: name, sku: c.t.variant?.sku ?? c.t.product.sku, unit: c.l.unit, qty: String(c.qty), qtyBase: String(c.qtyBase), costPerUnit: String(c.costPerUnit), costPerBase: String(qty4(c.costPerBase)), totalCost: String(c.totalCost) });
+        await tx.insert(stockReceiptLines).values({ receiptId: r.id, productId: c.l.productId, variantId: c.l.variantId ?? null, productName: name, sku: c.t.variant?.sku ?? c.t.product.sku, unit: c.l.unit, qty: c.qty, qtyBase: c.qtyBase, costPerUnit: c.costPerUnit, costPerBase: qty4(c.costPerBase), totalCost: c.totalCost });
         if (c.l.newRetailPrice != null && canPrice && c.l.newRetailPrice > 0) {
           if (c.t.variant) await tx.update(productVariants).set({ retailPrice: c.l.newRetailPrice }).where(eq(productVariants.id, c.t.variant.id));
           else await tx.update(products).set({ retailPrice: c.l.newRetailPrice }).where(eq(products.id, c.t.product.id));
@@ -174,7 +180,7 @@ export class InventoryService {
   async movements(branchId: string, productId: string, variantId: string | undefined, q: { page: number; pageSize: number; offset: number }) {
     const where = and(eq(stockMovements.branchId, branchId), eq(stockMovements.productId, productId), variantId ? eq(stockMovements.variantId, variantId) : undefined);
     const [items, [{ total }]] = await Promise.all([
-      this.db.select().from(stockMovements).where(where).orderBy(desc(stockMovements.createdAt)).limit(q.pageSize).offset(q.offset),
+      this.db.select().from(stockMovements).where(where).orderBy(desc(stockMovements.seq)).limit(q.pageSize).offset(q.offset),
       this.db.select({ total: sql<number>`count(*)::int` }).from(stockMovements).where(where),
     ]);
     return page(items, total, q);
@@ -195,6 +201,7 @@ export class InventoryService {
   /** Inventarizatsiya / qo'lda tuzatish (TZ 9.5). */
   async adjust(user: AuthUser, branchId: string, dto: StockAdjustDto, requestId?: string) {
     return this.db.transaction(async (tx) => {
+      await tx.select({ id: branches.id }).from(branches).where(eq(branches.id, branchId)).for('update');
       const t = (await this.loadTargets(tx, [{ productId: dto.productId, variantId: dto.variantId ?? null }])).get(`${dto.productId}|${dto.variantId ?? ''}`);
       if (!t) throw notFound('Mahsulot');
       if (t.product.isVariable && !t.variant) throw unprocessable('validation_failed', 'Variantni tanlang');
@@ -216,8 +223,8 @@ export class InventoryService {
     if (!lvl) throw notFound('Ombor qatori');
     if (dto.costPrice !== undefined && !user.permissions.includes('view_cost_price')) throw forbidden("Tannarxni o'zgartirish huquqi yo'q");
     const set: Partial<typeof stockLevels.$inferInsert> = {};
-    if (dto.minStock !== undefined) set.minStock = dto.minStock != null && dto.minStock > 0 ? String(dto.minStock) : null;
-    if (dto.costPrice !== undefined) set.costPrice = dto.costPrice != null && dto.costPrice > 0 ? String(dto.costPrice) : null;
+    if (dto.minStock !== undefined) set.minStock = dto.minStock != null && dto.minStock > 0 ? dto.minStock : null;
+    if (dto.costPrice !== undefined) set.costPrice = dto.costPrice != null && dto.costPrice > 0 ? dto.costPrice : null;
     if (!Object.keys(set).length) throw conflict('validation_failed', "O'zgartiriladigan maydon yo'q");
     const [row] = await this.db.update(stockLevels).set({ ...set, version: sql`${stockLevels.version} + 1` }).where(eq(stockLevels.id, id)).returning();
     const [p] = await this.db.select({ name: products.name }).from(products).where(eq(products.id, lvl.productId)).limit(1);

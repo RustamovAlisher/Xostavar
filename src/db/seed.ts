@@ -26,7 +26,7 @@ await db.transaction(async (tx) => {
   const catByName = new Map(allCats.map((c) => [c.name, c.id]));
   if (cats.length) {
     await tx.insert(schema.sizePresets).values(
-      D.sizePresets.map((s, i) => ({ categoryId: catByName.get(s.category)!, name: s.name, kgPerMeter: s.kgPerMeter != null ? String(s.kgPerMeter) : null, sortOrder: i })),
+      D.sizePresets.map((s, i) => ({ categoryId: catByName.get(s.category)!, name: s.name, kgPerMeter: s.kgPerMeter ?? null, sortOrder: i })),
     );
   }
   await tx.insert(schema.customerGroups).values(D.customerGroups.map((name, i) => ({ name, sortOrder: i }))).onConflictDoNothing();
@@ -92,13 +92,13 @@ await db.transaction(async (tx) => {
         .values({ name: it.name, categoryId: cat(it.category), sku: it.sku, baseUnit: it.baseUnit, isDivisible: it.isDivisible, retailPrice: it.retailPrice ?? 0, isVariable: !!it.variants })
         .returning({ id: schema.products.id });
       for (const c of it.conversions ?? []) {
-        await tx.insert(schema.unitConversions).values({ productId: p.id, unit: c.unit, factor: String(c.factor), price: c.price ?? null });
+        await tx.insert(schema.unitConversions).values({ productId: p.id, unit: c.unit, factor: c.factor, price: c.price ?? null });
         if (c.barcode) await tx.insert(schema.productBarcodes).values({ productId: p.id, unit: c.unit, barcode: c.barcode });
       }
       for (const b of it.barcodes ?? []) await tx.insert(schema.productBarcodes).values({ productId: p.id, barcode: b });
       for (const [i, v] of (it.variants ?? []).entries()) {
         const [row] = await tx.insert(schema.productVariants).values({ productId: p.id, name: v.name, sku: v.sku, retailPrice: v.retailPrice, sortOrder: i }).returning({ id: schema.productVariants.id });
-        if ('kg' in v) await tx.insert(schema.unitConversions).values({ productId: p.id, variantId: row.id, unit: 'kg', factor: String(v.kg) });
+        if ('kg' in v) await tx.insert(schema.unitConversions).values({ productId: p.id, variantId: row.id, unit: 'kg', factor: v.kg as number });
       }
     }
     console.log(`${items.length} ta namuna mahsulot yaratildi (qoldiqsiz — kirim orqali qo'shiladi)`);

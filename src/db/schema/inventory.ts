@@ -1,4 +1,4 @@
-import { date, index, integer, pgTable, text, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
+import { bigserial, date, index, integer, pgTable, text, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
 import { createdAt, id, money, qty, updatedAt, version } from './common.js';
 import { branches } from './branches.js';
@@ -21,7 +21,7 @@ export const stockLevels = pgTable(
       .notNull()
       .references(() => products.id, { onDelete: 'cascade' }),
     variantId: uuid('variant_id').references(() => productVariants.id, { onDelete: 'cascade' }),
-    stock: qty('stock').notNull().default('0'),
+    stock: qty('stock').notNull().default(0),
     minStock: qty('min_stock'),
     /** O'rtacha tannarx, asosiy birlik uchun (TZ 8.6). */
     costPrice: qty('cost_price'),
@@ -70,7 +70,7 @@ export const stockReceipts = pgTable(
       .references(() => users.id, { onDelete: 'restrict' }),
     userName: text('user_name').notNull(),
     note: text('note'),
-    totalCost: qty('total_cost').notNull().default('0'),
+    totalCost: qty('total_cost').notNull().default(0),
     createdAt: createdAt(),
   },
   (t) => [uniqueIndex('stock_receipts_branch_number_uq').on(t.branchId, t.number), index('stock_receipts_branch_date_idx').on(t.branchId, t.date)],
@@ -95,9 +95,9 @@ export const stockReceiptLines = pgTable(
       .references(() => units.id, { onDelete: 'restrict' }),
     qty: qty('qty').notNull(),
     qtyBase: qty('qty_base').notNull(),
-    costPerUnit: qty('cost_per_unit').notNull().default('0'),
-    costPerBase: qty('cost_per_base').notNull().default('0'),
-    totalCost: qty('total_cost').notNull().default('0'),
+    costPerUnit: qty('cost_per_unit').notNull().default(0),
+    costPerBase: qty('cost_per_base').notNull().default(0),
+    totalCost: qty('total_cost').notNull().default(0),
   },
   (t) => [index('stock_receipt_lines_receipt_idx').on(t.receiptId), index('stock_receipt_lines_product_idx').on(t.productId)],
 );
@@ -107,6 +107,7 @@ export const stockMovements = pgTable(
   'stock_movements',
   {
     id: id(),
+    seq: bigserial('seq', { mode: 'number' }).notNull(),
     branchId: uuid('branch_id')
       .notNull()
       .references(() => branches.id, { onDelete: 'restrict' }),
@@ -126,5 +127,5 @@ export const stockMovements = pgTable(
     userId: uuid('user_id').references(() => users.id, { onDelete: 'set null' }),
     createdAt: createdAt(),
   },
-  (t) => [index('stock_movements_target_time_idx').on(t.branchId, t.productId, t.createdAt), index('stock_movements_ref_idx').on(t.refId)],
+  (t) => [index('stock_movements_target_seq_idx').on(t.branchId, t.productId, t.seq), index('stock_movements_ref_idx').on(t.refId), uniqueIndex('stock_movements_seq_uq').on(t.seq)],
 );

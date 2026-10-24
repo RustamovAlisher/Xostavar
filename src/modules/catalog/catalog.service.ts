@@ -89,7 +89,7 @@ export class CatalogService {
     const convView = (list: (typeof unitConversions.$inferSelect)[], codesFor: (typeof productBarcodes.$inferSelect)[]) =>
       list.map((c) => {
         const bc = codesFor.find((b) => b.unit === c.unit)?.barcode;
-        return { unit: c.unit, factor: Number(c.factor), ...(c.price != null ? { price: c.price } : {}), ...(bc ? { barcode: bc } : {}) };
+        return { unit: c.unit, factor: c.factor, ...(c.price != null ? { price: c.price } : {}), ...(bc ? { barcode: bc } : {}) };
       });
 
     return rows.map((p) => {
@@ -131,7 +131,7 @@ export class CatalogService {
       where.push(exists(this.db.select({ x: sql`1` }).from(stockLevels).where(and(eq(stockLevels.branchId, branchId), eq(stockLevels.productId, products.id)))));
     }
     if ((q.lowStock === 'true' || q.lowStock === '1') && branchId) {
-      where.push(exists(this.db.select({ x: sql`1` }).from(stockLevels).where(and(eq(stockLevels.branchId, branchId), eq(stockLevels.productId, products.id), gt(stockLevels.minStock, '0'), sql`${stockLevels.stock} < ${stockLevels.minStock}`))));
+      where.push(exists(this.db.select({ x: sql`1` }).from(stockLevels).where(and(eq(stockLevels.branchId, branchId), eq(stockLevels.productId, products.id), gt(stockLevels.minStock, 0), sql`${stockLevels.stock} < ${stockLevels.minStock}`))));
     }
     if (q.q?.trim()) {
       const term = q.q.trim();
@@ -261,14 +261,14 @@ export class CatalogService {
 
   private async writeChildren(tx: DbOrTx, productId: string, dto: ProductDto, variants: VariantDto[], keepVariantIds: Map<number, string>) {
     await Promise.all([tx.delete(unitConversions).where(eq(unitConversions.productId, productId)), tx.delete(productBarcodes).where(eq(productBarcodes.productId, productId))]);
-    const convRows: (typeof unitConversions.$inferInsert)[] = dto.conversions.map((c) => ({ productId, variantId: null, unit: c.unit, factor: String(c.factor), price: c.price ?? null }));
+    const convRows: (typeof unitConversions.$inferInsert)[] = dto.conversions.map((c) => ({ productId, variantId: null, unit: c.unit, factor: c.factor, price: c.price ?? null }));
     const codeRows: (typeof productBarcodes.$inferInsert)[] = [
       ...(dto.barcodes ?? []).map((b) => ({ productId, barcode: b.trim() })),
       ...dto.conversions.filter((c) => c.barcode?.trim()).map((c) => ({ productId, unit: c.unit, barcode: c.barcode!.trim() })),
     ];
     for (const [i, v] of variants.entries()) {
       const variantId = keepVariantIds.get(i)!;
-      for (const c of v.conversions ?? []) convRows.push({ productId, variantId, unit: c.unit, factor: String(c.factor), price: c.price ?? null });
+      for (const c of v.conversions ?? []) convRows.push({ productId, variantId, unit: c.unit, factor: c.factor, price: c.price ?? null });
       for (const b of v.barcodes ?? []) codeRows.push({ productId, variantId, barcode: b.trim() });
       for (const c of (v.conversions ?? []).filter((c) => c.barcode?.trim())) codeRows.push({ productId, variantId, unit: c.unit, barcode: c.barcode!.trim() });
     }
@@ -280,8 +280,8 @@ export class CatalogService {
   private async writeLevelFields(tx: DbOrTx, user: AuthUser, branchId: string | null, productId: string, variantId: string | null, dto: { minStock?: number | null; costPrice?: number | null }) {
     if (!branchId || (dto.minStock === undefined && dto.costPrice === undefined)) return;
     const set: Partial<typeof stockLevels.$inferInsert> = {};
-    if (dto.minStock !== undefined) set.minStock = dto.minStock != null && dto.minStock > 0 ? String(dto.minStock) : null;
-    if (dto.costPrice !== undefined && user.permissions.includes('view_cost_price')) set.costPrice = dto.costPrice != null && dto.costPrice > 0 ? String(dto.costPrice) : null;
+    if (dto.minStock !== undefined) set.minStock = dto.minStock != null && dto.minStock > 0 ? dto.minStock : null;
+    if (dto.costPrice !== undefined && user.permissions.includes('view_cost_price')) set.costPrice = dto.costPrice != null && dto.costPrice > 0 ? dto.costPrice : null;
     if (!Object.keys(set).length) return;
     await tx.update(stockLevels).set(set).where(and(eq(stockLevels.branchId, branchId), eq(stockLevels.productId, productId), variantId ? eq(stockLevels.variantId, variantId) : isNull(stockLevels.variantId)));
   }
@@ -325,7 +325,7 @@ export class CatalogService {
           .select({ variantId: stockLevels.variantId, stock: stockLevels.stock, branch: branches.name })
           .from(stockLevels)
           .innerJoin(branches, eq(branches.id, stockLevels.branchId))
-          .where(and(inArray(stockLevels.variantId, removed.map((v) => v.id)), gt(stockLevels.stock, '0')));
+          .where(and(inArray(stockLevels.variantId, removed.map((v) => v.id)), gt(stockLevels.stock, 0)));
         if (stocked.length) {
           const v = removed.find((x) => x.id === stocked[0].variantId)!;
           throw conflict('in_use', `"${v.name}" variantining ${stocked[0].branch} omborida qoldig'i bor (${Number(stocked[0].stock)}) — avval qoldiqni 0 ga keltiring`, { variantId: v.id });
@@ -361,7 +361,7 @@ export class CatalogService {
     await this.db.transaction(async (tx) => {
       const [p] = await tx.select().from(products).where(and(eq(products.id, id), isNull(products.deletedAt))).limit(1).for('update');
       if (!p) throw notFound('Mahsulot');
-      const [stocked] = await tx.select({ branch: branches.name, stock: stockLevels.stock }).from(stockLevels).innerJoin(branches, eq(branches.id, stockLevels.branchId)).where(and(eq(stockLevels.productId, id), gt(stockLevels.stock, '0'))).limit(1);
+      const [stocked] = await tx.select({ branch: branches.name, stock: stockLevels.stock }).from(stockLevels).innerJoin(branches, eq(branches.id, stockLevels.branchId)).where(and(eq(stockLevels.productId, id), gt(stockLevels.stock, 0))).limit(1);
       if (stocked) throw conflict('in_use', `${stocked.branch} omborida qoldig'i bor (${Number(stocked.stock)}) — avval qoldiqni 0 ga keltiring`);
       const [sold] = await tx.select({ id: saleLines.id }).from(saleLines).where(eq(saleLines.productId, id)).limit(1);
       const [received] = sold ? [sold] : await tx.select({ id: stockReceiptLines.id }).from(stockReceiptLines).where(eq(stockReceiptLines.productId, id)).limit(1);

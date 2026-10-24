@@ -29,8 +29,10 @@ export class AuthGuard implements CanActivate {
     const token = header.startsWith('Bearer ') ? header.slice(7) : '';
     if (!token) throw unauthorized();
     const payload = await this.auth.verifyAccess(token);
+    // Sessiya bekor qilingan bo'lsa (logout, nofaol qilish, parol tiklash) access token ham ishlamaydi (TZ 3.3 (5))
+    if (!(await this.auth.isSessionAlive(payload.sid))) throw unauthorized('Sessiya bekor qilingan, qayta kiring');
     const user = await this.auth.loadUser(payload.sub);
-    if (!user) throw unauthorized('Akkaunt faol emas yoki o\'chirilgan');
+    if (!user) throw unauthorized("Akkaunt faol emas yoki o'chirilgan");
     req.user = user;
     req.sessionId = payload.sid;
 

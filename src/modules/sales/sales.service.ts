@@ -117,6 +117,8 @@ export class SalesService {
       if (dup) return this.get(user, dup.id);
     }
     const id = await this.db.transaction(async (tx) => {
+      // Qulf tartibi hamma joyda bir xil: avval filial qatori (chek raqami), keyin qoldiq qatorlari — deadlock bo'lmasin
+      const [b] = await tx.select({ code: branches.code }).from(branches).where(eq(branches.id, branchId)).for('update');
       const shiftId = await this.shifts.requireForSale(tx, user, branchId);
       const q = await this.quoteLines(tx, branchId, dto, true);
       const rules = q.rules;
@@ -148,16 +150,15 @@ export class SalesService {
       const paymentSummary = remaining > 0 && pays.length === 0 ? (debtMethod?.code ?? 'debt') : pays.length === 1 ? pays[0].m.code : pays.length > 1 ? 'mixed' : (methods.find((m) => m.kind === 'cash')?.code ?? 'cash');
 
       // Chek raqami: filial kodi + kun + tartib (filial qulfi ostida)
-      const [b] = await tx.select({ code: branches.code }).from(branches).where(eq(branches.id, branchId)).for('update');
       const number = await this.nextNumber(tx, branchId, b.code);
       const [s] = await tx
         .insert(sales)
         .values({
           branchId, number, type: 'sale', shiftId, cashierId: user.id, cashierName: user.name, customerId: customer?.id ?? null, customerName: customer?.name ?? 'Oddiy mijoz',
-          paymentSummary, subtotal: q.subtotal, discountAmount: q.discount, totalAmount: q.total, paidAmount: paid, remainingDebt: remaining, profit: q.profit, vatIncluded: String(q.vat), clientId: dto.clientId ?? null,
+          paymentSummary, subtotal: q.subtotal, discountAmount: q.discount, totalAmount: q.total, paidAmount: paid, remainingDebt: remaining, profit: q.profit, vatIncluded: q.vat, clientId: dto.clientId ?? null,
         })
         .returning({ id: sales.id });
-      await tx.insert(saleLines).values(q.lines.map((l, i) => ({ saleId: s.id, productId: l.productId, variantId: l.variantId, name: l.name, variantName: l.variantName, sku: l.sku, categoryId: l.categoryId, unit: l.unit, qty: String(l.qty), baseQty: String(l.baseQty), unitPrice: l.unitPrice, lineTotal: l.lineTotal, costPerBase: l.costPerBase != null ? String(l.costPerBase) : null, cuts: l.cuts ?? null, sortOrder: i })));
+      await tx.insert(saleLines).values(q.lines.map((l, i) => ({ saleId: s.id, productId: l.productId, variantId: l.variantId, name: l.name, variantName: l.variantName, sku: l.sku, categoryId: l.categoryId, unit: l.unit, qty: l.qty, baseQty: l.baseQty, unitPrice: l.unitPrice, lineTotal: l.lineTotal, costPerBase: l.costPerBase, cuts: l.cuts ?? null, sortOrder: i })));
       if (pays.length) await tx.insert(salePayments).values(pays.map((p) => ({ saleId: s.id, methodId: p.m.id, methodCode: p.m.code, kind: p.m.kind, amount: p.amount, ref: p.ref })));
       // Qoldiqni ayirish (qulflangan qatorlar)
       for (const [key, need] of q.need) {
@@ -214,6 +215,7 @@ export class SalesService {
 
   async void(user: AuthUser, branchId: string, id: string, reason: string, requestId?: string) {
     await this.db.transaction(async (tx) => {
+      await tx.select({ id: branches.id }).from(branches).where(eq(branches.id, branchId)).for('update');
       const [s] = await tx.select().from(sales).where(eq(sales.id, id)).limit(1).for('update');
       if (!s) throw notFound('Chek');
       if (s.branchId !== branchId) throw forbidden("Boshqa filial chekini bekor qila olmaysiz", 'branch_forbidden');

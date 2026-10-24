@@ -1,20 +1,16 @@
-import { ValidationPipe } from '@nestjs/common';
 import { NestFactory } from '@nestjs/core';
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger';
 import { ConfigService } from '@nestjs/config';
 import { Logger } from 'nestjs-pino';
 import { AppModule } from './app.module.js';
 import type { Env } from './config/env.js';
+import { configureApp } from './app.setup.js';
 
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, { bufferLogs: true });
   app.useLogger(app.get(Logger));
   const config = app.get(ConfigService<Env, true>);
-
-  app.setGlobalPrefix('api/v1', { exclude: ['health'] });
-  app.enableCors({ origin: config.get('CORS_ORIGINS', { infer: true }), credentials: true, exposedHeaders: ['X-Request-Id', 'Idempotent-Replayed'] });
-  app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true, forbidUnknownValues: false, transformOptions: { enableImplicitConversion: false } }));
-  app.enableShutdownHooks();
+  configureApp(app);
 
   // OpenAPI: /api/docs (UI) va /api/docs-json (frontend tiplari generatsiyasi uchun)
   const doc = SwaggerModule.createDocument(

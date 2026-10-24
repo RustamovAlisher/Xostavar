@@ -62,7 +62,7 @@ export const sales = pgTable(
     remainingDebt: money('remaining_debt').notNull().default(0),
     customerDebtAfter: money('customer_debt_after'),
     profit: money('profit').notNull().default(0),
-    vatIncluded: numeric('vat_included', { precision: 18, scale: 2 }).notNull().default('0'),
+    vatIncluded: numeric('vat_included', { precision: 18, scale: 2, mode: 'number' }).notNull().default(0),
     status: text('status', { enum: ['completed', 'voided'] }).notNull().default('completed'),
     voidedAt: timestamp('voided_at', { withTimezone: true }),
     voidedBy: uuid('voided_by').references(() => users.id, { onDelete: 'set null' }),

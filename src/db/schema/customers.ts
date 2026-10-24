@@ -1,4 +1,4 @@
-import { date, index, pgTable, text, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
+import { bigserial, date, index, pgTable, text, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
 import { createdAt, deletedAt, id, money, updatedAt, version } from './common.js';
 import { customerGroups } from './settings.js';
 import { branches } from './branches.js';
@@ -31,6 +31,8 @@ export const debtLedger = pgTable(
   'debt_ledger',
   {
     id: id(),
+    /** Haqiqiy ketma-ketlik: created_at tranzaksiya boshlanish vaqti, parallel yozuvlarda tartib bermaydi. */
+    seq: bigserial('seq', { mode: 'number' }).notNull(),
     customerId: uuid('customer_id')
       .notNull()
       .references(() => customers.id, { onDelete: 'restrict' }),
@@ -45,5 +47,5 @@ export const debtLedger = pgTable(
     userId: uuid('user_id').references(() => users.id, { onDelete: 'set null' }),
     createdAt: createdAt(),
   },
-  (t) => [index('debt_ledger_customer_time_idx').on(t.customerId, t.createdAt)],
+  (t) => [index('debt_ledger_customer_seq_idx').on(t.customerId, t.seq), uniqueIndex('debt_ledger_seq_uq').on(t.seq)],
 );
