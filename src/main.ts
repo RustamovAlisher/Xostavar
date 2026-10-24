@@ -6,6 +6,15 @@ import { AppModule } from './app.module.js';
 import type { Env } from './config/env.js';
 import { configureApp } from './app.setup.js';
 
+// Ushlanmagan xatolar jarayonni jimgina o'ldirmasin: logga, keyin (uncaught bo'lsa) toza to'xtash
+process.on('unhandledRejection', (reason) => {
+  console.error(JSON.stringify({ level: 'error', msg: 'unhandledRejection', reason: reason instanceof Error ? { name: reason.name, message: reason.message, stack: reason.stack } : String(reason) }));
+});
+process.on('uncaughtException', (err) => {
+  console.error(JSON.stringify({ level: 'fatal', msg: 'uncaughtException', name: err.name, message: err.message, stack: err.stack }));
+  process.exit(1);
+});
+
 async function bootstrap() {
   const app = await NestFactory.create(AppModule, { bufferLogs: true });
   app.useLogger(app.get(Logger));

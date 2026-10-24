@@ -1,6 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { and, asc, eq, inArray, isNull, notInArray, sql } from 'drizzle-orm';
 import { DB, type Db, type DbOrTx } from '../../db/db.module.js';
+import { runTx } from '../../db/tx.js';
 import {
   businessRules, categories, customerGroups, customers, expenseCategories, expenses, paymentMethods, products, productVariants,
   saleLines, salePayments, sizePresets, stockReceiptLines, storeSettings, suppliers, unitConversions, units,
@@ -55,7 +56,7 @@ export class SettingsService {
   /** PUT /settings. Tekshiruvlar frontend `validateSettings` + "ishlatilmoqda" qoidalari (TZ 7.2, 9.3). */
   async saveAll(actor: AuthUser, dto: SettingsBundleDto) {
     this.validateBundle(dto);
-    await this.db.transaction(async (tx) => {
+    await runTx(this.db, async (tx) => {
       // Birliklar avval yoziladi (kategoriya ularga tayanadi), o'chirilganlari kategoriyalardan keyin (FK)
       await this.upsertUnits(tx, dto);
       await this.saveCategories(tx, dto);
@@ -229,7 +230,7 @@ export class SettingsService {
   /** TZ 9.3: standartga qaytarish, ishlatilayotgan yozuvlar saqlanadi. */
   async reset(actor: AuthUser) {
     const d = DEFAULT_SETTINGS;
-    await this.db.transaction(async (tx) => {
+    await runTx(this.db, async (tx) => {
       await tx.insert(storeSettings).values({ id: 1, ...d.store }).onConflictDoUpdate({ target: storeSettings.id, set: { ...d.store, version: sql`${storeSettings.version} + 1` } });
       await tx.insert(businessRules).values({ id: 1, ...d.rules }).onConflictDoUpdate({ target: businessRules.id, set: { ...d.rules, version: sql`${businessRules.version} + 1` } });
       for (const [i, u] of d.units.entries()) await tx.insert(units).values({ ...u, sortOrder: i }).onConflictDoUpdate({ target: units.id, set: { ...u, sortOrder: i } });

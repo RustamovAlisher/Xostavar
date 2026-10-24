@@ -1,6 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { and, asc, desc, eq, gte, inArray, isNull, lte, sql } from 'drizzle-orm';
 import { DB, type Db, type DbOrTx } from '../../db/db.module.js';
+import { runTx } from '../../db/tx.js';
 import { auditLogs, branches, productVariants, products, stockLevels, stockMovements, stockReceiptLines, stockReceipts, suppliers, unitConversions, units } from '../../db/schema/index.js';
 import type { AuthUser } from '../../common/auth-context.js';
 import { conflict, forbidden, notFound, unprocessable } from '../../common/errors.js';
@@ -98,7 +99,7 @@ export class InventoryService {
 
   async stockIn(user: AuthUser, branchId: string, dto: StockInDto, requestId?: string) {
     const canPrice = user.permissions.includes('edit_product');
-    const receiptId = await this.db.transaction(async (tx) => {
+    const receiptId = await runTx(this.db, async (tx) => {
       // Filial qatori qulfi: kirim raqami filial bo'yicha ketma-ket
       const [b] = await tx.select({ id: branches.id, name: branches.name, active: branches.active }).from(branches).where(eq(branches.id, branchId)).for('update');
       if (!b?.active) throw forbidden('Filial nofaol', 'branch_inactive');
@@ -200,7 +201,7 @@ export class InventoryService {
 
   /** Inventarizatsiya / qo'lda tuzatish (TZ 9.5). */
   async adjust(user: AuthUser, branchId: string, dto: StockAdjustDto, requestId?: string) {
-    return this.db.transaction(async (tx) => {
+    return runTx(this.db, async (tx) => {
       await tx.select({ id: branches.id }).from(branches).where(eq(branches.id, branchId)).for('update');
       const t = (await this.loadTargets(tx, [{ productId: dto.productId, variantId: dto.variantId ?? null }])).get(`${dto.productId}|${dto.variantId ?? ''}`);
       if (!t) throw notFound('Mahsulot');

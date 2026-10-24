@@ -1,6 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { and, asc, eq, inArray, isNull, ne, sql } from 'drizzle-orm';
 import { DB, type Db, type DbOrTx } from '../../db/db.module.js';
+import { runTx } from '../../db/tx.js';
 import { branches, roles, userBranches, users } from '../../db/schema/index.js';
 import type { AuthUser } from '../../common/auth-context.js';
 import { conflict, forbidden, notFound, unprocessable } from '../../common/errors.js';
@@ -175,7 +176,7 @@ export class UsersService {
     const branchIds = role.allBranches ? [] : scope ? [scope] : (dto.branchIds ?? []);
     const hash = await AuthService.hash(dto.password);
 
-    const view = await this.db.transaction(async (tx) => {
+    const view = await runTx(this.db, async (tx) => {
       const [u] = await tx
         .insert(users)
         .values({ name: dto.name.trim(), username: dto.username.trim().toLowerCase(), email, phone: dto.phone?.trim() || null, roleId: role.id, permissions, passwordHash: hash, mustChangePassword: true, active: dto.active ?? true })
@@ -209,7 +210,7 @@ export class UsersService {
     if (dto.password) AuthService.checkPolicy(dto.password);
     const hash = dto.password ? await AuthService.hash(dto.password) : undefined;
 
-    await this.db.transaction(async (tx) => {
+    await runTx(this.db, async (tx) => {
       await tx
         .update(users)
         .set({
@@ -239,7 +240,7 @@ export class UsersService {
     const old = await this.getRaw(id);
     this.assertInScope(actor, old);
     const permissions = this.mergePerms(actor, dto.permissions, old.permissions);
-    await this.db.transaction(async (tx) => {
+    await runTx(this.db, async (tx) => {
       await tx.update(users).set({ permissions, version: old.version + 1 }).where(eq(users.id, id));
       await this.assertAdminRemains(tx);
       await this.audit.log(actor, {
@@ -257,7 +258,7 @@ export class UsersService {
     if (old.allBranches) throw unprocessable('validation_failed', 'Barcha filiallarni ko\'ruvchi rolga filial biriktirilmaydi');
     const scope = this.scopeOf(actor);
     const ids = scope ? [scope] : dto.branchIds;
-    await this.db.transaction(async (tx) => {
+    await runTx(this.db, async (tx) => {
       await this.setBranchesTx(tx, id, ids, dto.defaultBranchId);
       await this.audit.log(actor, { action: 'user_update', module: 'Xodimlar', targetId: id, targetName: old.name, details: `Filiallar: ${ids.length} ta` }, tx);
     });
@@ -270,7 +271,7 @@ export class UsersService {
     const old = await this.getRaw(id);
     this.assertInScope(actor, old);
     const active = !old.active;
-    await this.db.transaction(async (tx) => {
+    await runTx(this.db, async (tx) => {
       await tx.update(users).set({ active, version: old.version + 1 }).where(eq(users.id, id));
       await this.assertAdminRemains(tx);
       await this.audit.log(actor, { action: 'user_update', module: 'Xodimlar', targetId: id, targetName: old.name, details: `Holat: ${active ? 'Faol' : 'Nofaol'}` }, tx);
@@ -294,7 +295,7 @@ export class UsersService {
     if (id === actor.id) throw forbidden("O'z akkauntingizni o'chira olmaysiz", 'self_action_forbidden');
     const old = await this.getRaw(id);
     this.assertInScope(actor, old);
-    await this.db.transaction(async (tx) => {
+    await runTx(this.db, async (tx) => {
       // Login va email bo'shatiladi: keyin shu login bilan yangi xodim ochish mumkin
       await tx.update(users).set({ deletedAt: new Date(), active: false, username: `${old.username}#del#${Date.now()}`, email: null }).where(eq(users.id, id));
       await tx.delete(userBranches).where(eq(userBranches.userId, id));

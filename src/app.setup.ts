@@ -1,4 +1,5 @@
-import { ValidationPipe, type INestApplication } from '@nestjs/common';
+import type { INestApplication } from '@nestjs/common';
+import { createValidationPipe } from './common/validation.js';
 import { ConfigService } from '@nestjs/config';
 import type { Env } from './config/env.js';
 
@@ -7,7 +8,7 @@ export function configureApp(app: INestApplication) {
   const config = app.get(ConfigService<Env, true>);
   app.setGlobalPrefix('api/v1', { exclude: ['health'] });
   app.enableCors({ origin: config.get('CORS_ORIGINS', { infer: true }), credentials: true, exposedHeaders: ['X-Request-Id', 'Idempotent-Replayed'] });
-  app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true, forbidUnknownValues: false, transformOptions: { enableImplicitConversion: false } }));
+  app.useGlobalPipes(createValidationPipe());
   app.enableShutdownHooks();
   return app;
 }

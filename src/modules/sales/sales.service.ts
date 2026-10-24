@@ -1,6 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { and, desc, eq, gte, ilike, inArray, lte, or, sql } from 'drizzle-orm';
 import { DB, type Db, type DbOrTx } from '../../db/db.module.js';
+import { runTx } from '../../db/tx.js';
 import { branches, paymentMethods, saleLines, salePayments, sales, units } from '../../db/schema/index.js';
 import type { AuthUser } from '../../common/auth-context.js';
 import { conflict, forbidden, notFound, unprocessable } from '../../common/errors.js';
@@ -116,7 +117,7 @@ export class SalesService {
       const [dup] = await this.db.select({ id: sales.id }).from(sales).where(eq(sales.clientId, dto.clientId)).limit(1);
       if (dup) return this.get(user, dup.id);
     }
-    const id = await this.db.transaction(async (tx) => {
+    const id = await runTx(this.db, async (tx) => {
       // Qulf tartibi hamma joyda bir xil: avval filial qatori (chek raqami), keyin qoldiq qatorlari — deadlock bo'lmasin
       const [b] = await tx.select({ code: branches.code }).from(branches).where(eq(branches.id, branchId)).for('update');
       const shiftId = await this.shifts.requireForSale(tx, user, branchId);
@@ -191,7 +192,7 @@ export class SalesService {
   /* ───────── Qarz to'lovi (TZ 8.8) ───────── */
 
   async debtPayment(user: AuthUser, branchId: string, customerId: string, dto: DebtPaymentDto, requestId?: string) {
-    const id = await this.db.transaction(async (tx) => {
+    const id = await runTx(this.db, async (tx) => {
       const shiftId = await this.shifts.requireForSale(tx, user, branchId, true);
       const [m] = await tx.select().from(paymentMethods).where(eq(paymentMethods.id, dto.methodId)).limit(1);
       if (!m || !m.enabled || m.kind === 'debt') throw unprocessable('payment_method_disabled', "To'lov usuli noto'g'ri yoki o'chirilgan");
@@ -214,7 +215,7 @@ export class SalesService {
   /* ───────── Storno (TZ 7.9) ───────── */
 
   async void(user: AuthUser, branchId: string, id: string, reason: string, requestId?: string) {
-    await this.db.transaction(async (tx) => {
+    await runTx(this.db, async (tx) => {
       await tx.select({ id: branches.id }).from(branches).where(eq(branches.id, branchId)).for('update');
       const [s] = await tx.select().from(sales).where(eq(sales.id, id)).limit(1).for('update');
       if (!s) throw notFound('Chek');

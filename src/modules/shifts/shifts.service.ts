@@ -1,6 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { and, desc, eq, gte, isNull, lte, sql } from 'drizzle-orm';
 import { DB, type Db, type DbOrTx } from '../../db/db.module.js';
+import { runTx } from '../../db/tx.js';
 import { businessRules, expenses, paymentMethods, salePayments, sales, shifts } from '../../db/schema/index.js';
 import type { AuthUser } from '../../common/auth-context.js';
 import { conflict, forbidden, isUniqueViolation, notFound, unprocessable } from '../../common/errors.js';
@@ -53,7 +54,7 @@ export class ShiftsService {
     if (existing) throw conflict('in_use', `Smena allaqachon ochiq (${existing.openedByName})`);
     const cash = Math.max(0, Math.round(openingCash));
     try {
-      const s = await this.db.transaction(async (tx) => {
+      const s = await runTx(this.db, async (tx) => {
         const [row] = await tx.insert(shifts).values({ branchId, openedBy: user.id, openedByName: user.name, openingCash: cash }).returning();
         await this.audit.log(user, { action: 'shift_open', module: 'Kassa', targetId: row.id, targetName: 'Smena', details: `Smena ochildi, kassada ${cash.toLocaleString('ru-RU')} so'm`, branchId }, tx);
         return row;
@@ -119,7 +120,7 @@ export class ShiftsService {
     if (s.openedBy !== user.id && !user.permissions.includes('manage_users')) {
       throw forbidden(`Smenani faqat ${s.openedByName} yoki administrator yopa oladi`, 'shift_owned_by_other');
     }
-    return this.db.transaction(async (tx) => {
+    return runTx(this.db, async (tx) => {
       const totals = await this.totals(s.id, tx);
       const expectedCash = s.openingCash + totals.cash - totals.cashOut;
       const counted = countedCash != null ? Math.max(0, Math.round(countedCash)) : null;

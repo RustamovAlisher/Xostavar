@@ -1,6 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { and, asc, desc, eq, gt, ilike, isNull, like, lt, ne, or, sql } from 'drizzle-orm';
 import { DB, type Db, type DbOrTx } from '../../db/db.module.js';
+import { runTx } from '../../db/tx.js';
 import { customerGroups, customers, debtLedger } from '../../db/schema/index.js';
 import type { AuthUser } from '../../common/auth-context.js';
 import { conflict, notFound, unprocessable } from '../../common/errors.js';
@@ -76,7 +77,7 @@ export class CustomersService {
     const phone = canonicalPhone(dto.phone);
     if (!phone) throw unprocessable('validation_failed', "Telefon raqamini to'liq kiriting (+998 va 9 ta raqam)");
     const rules = await this.settings.getRules();
-    const id = await this.db.transaction(async (tx) => {
+    const id = await runTx(this.db, async (tx) => {
       await this.assertPhoneFree(tx, phone);
       let groupId = dto.groupId ?? null;
       if (!groupId) groupId = (await tx.select({ id: customerGroups.id }).from(customerGroups).orderBy(asc(customerGroups.sortOrder)).limit(1))[0]?.id ?? null;
@@ -93,7 +94,7 @@ export class CustomersService {
   async update(user: AuthUser, id: string, dto: CustomerDto): Promise<CustomerView> {
     const phone = canonicalPhone(dto.phone);
     if (!phone) throw unprocessable('validation_failed', "Telefon raqamini to'liq kiriting (+998 va 9 ta raqam)");
-    await this.db.transaction(async (tx) => {
+    await runTx(this.db, async (tx) => {
       const [old] = await tx.select().from(customers).where(and(eq(customers.id, id), isNull(customers.deletedAt))).limit(1).for('update');
       if (!old) throw notFound('Mijoz');
       assertVersion(old.version, dto.version, 'Mijoz');
@@ -113,7 +114,7 @@ export class CustomersService {
 
   /** TZ 8.11: faqat qarzi 0 bo'lsa, yumshoq. */
   async remove(user: AuthUser, id: string) {
-    await this.db.transaction(async (tx) => {
+    await runTx(this.db, async (tx) => {
       const [c] = await tx.select().from(customers).where(and(eq(customers.id, id), isNull(customers.deletedAt))).limit(1).for('update');
       if (!c) throw notFound('Mijoz');
       if (c.totalDebt > 0) throw conflict('in_use', "Qarzi bor mijozni o'chirib bo'lmaydi");

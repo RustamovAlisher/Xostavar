@@ -1,6 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { and, desc, eq, gte, isNull, lte, sql } from 'drizzle-orm';
 import { DB, type Db } from '../../db/db.module.js';
+import { runTx } from '../../db/tx.js';
 import { expenseCategories, expenses, paymentMethods } from '../../db/schema/index.js';
 import type { AuthUser } from '../../common/auth-context.js';
 import { conflict, forbidden, notFound, unprocessable } from '../../common/errors.js';
@@ -19,7 +20,7 @@ export class ExpensesService {
   ) {}
 
   async create(user: AuthUser, branchId: string, dto: ExpenseDto, requestId?: string) {
-    const id = await this.db.transaction(async (tx) => {
+    const id = await runTx(this.db, async (tx) => {
       const [cat] = await tx.select().from(expenseCategories).where(eq(expenseCategories.id, dto.categoryId)).limit(1);
       if (!cat || !cat.active) throw notFound('Xarajat kategoriyasi');
       const [m] = await tx.select().from(paymentMethods).where(eq(paymentMethods.id, dto.methodId)).limit(1);

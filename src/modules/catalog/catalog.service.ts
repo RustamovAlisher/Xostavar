@@ -2,6 +2,7 @@ import { Inject, Injectable } from '@nestjs/common';
 import { and, asc, desc, eq, exists, gt, ilike, inArray, isNull, ne, or, sql, type SQL } from 'drizzle-orm';
 import type { PgColumn } from 'drizzle-orm/pg-core';
 import { DB, type Db, type DbOrTx } from '../../db/db.module.js';
+import { runTx } from '../../db/tx.js';
 import {
   branchPrices, branches, categories, productBarcodes, productVariants, products, saleLines, stockLevels, stockReceiptLines, unitConversions, units,
 } from '../../db/schema/index.js';
@@ -287,7 +288,7 @@ export class CatalogService {
   }
 
   async create(user: AuthUser, branchId: string | null, dto: ProductDto): Promise<ProductView> {
-    const id = await this.db.transaction(async (tx) => {
+    const id = await runTx(this.db, async (tx) => {
       await this.validate(tx, dto);
       const { sku, variants } = await this.finalizeSkus(tx, dto);
       await this.assertCodesFree(tx, this.allCodes(sku, dto, variants));
@@ -308,7 +309,7 @@ export class CatalogService {
   }
 
   async update(user: AuthUser, branchId: string | null, id: string, dto: ProductDto): Promise<ProductView> {
-    await this.db.transaction(async (tx) => {
+    await runTx(this.db, async (tx) => {
       const [old] = await tx.select().from(products).where(and(eq(products.id, id), isNull(products.deletedAt))).limit(1).for('update');
       if (!old) throw notFound('Mahsulot');
       assertVersion(old.version, dto.version, 'Mahsulot');
@@ -358,7 +359,7 @@ export class CatalogService {
 
   /** TZ 8.11: tarixi bor mahsulot yumshoq o'chiriladi; qoldig'i bo'lsa o'chirilmaydi. */
   async remove(user: AuthUser, id: string) {
-    await this.db.transaction(async (tx) => {
+    await runTx(this.db, async (tx) => {
       const [p] = await tx.select().from(products).where(and(eq(products.id, id), isNull(products.deletedAt))).limit(1).for('update');
       if (!p) throw notFound('Mahsulot');
       const [stocked] = await tx.select({ branch: branches.name, stock: stockLevels.stock }).from(stockLevels).innerJoin(branches, eq(branches.id, stockLevels.branchId)).where(and(eq(stockLevels.productId, id), gt(stockLevels.stock, 0))).limit(1);
