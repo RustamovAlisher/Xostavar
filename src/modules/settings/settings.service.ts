@@ -11,7 +11,6 @@ import { AuditService } from '../audit/audit.service.js';
 import type { SettingsBundleDto } from './settings.dto.js';
 import { DEFAULT_SETTINGS } from './settings.defaults.js';
 
-const SYSTEM_METHODS = ['cash', 'card', 'transfer', 'debt'];
 const dupName = (names: string[]) => {
   const seen = new Set<string>();
   for (const n of names) {

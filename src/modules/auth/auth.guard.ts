@@ -45,25 +45,26 @@ export class AuthGuard implements CanActivate {
       if (!ok) throw forbidden();
     }
 
-    // Filial konteksti (TZ 5, 8.12): X-Branch-Id yoki standart filial
+    // Filial konteksti (TZ 5, 8.12): X-Branch-Id → standart filial → (egasi uchun) birinchi faol filial.
+    // Har doim aniqlanadi (katalog ham joriy filial qoldig'ini qaytaradi); @BranchScoped endpointda majburiy.
     const scoped = this.reflector.getAllAndOverride<boolean>(BRANCH_KEY, targets);
     const requested = (req.headers['x-branch-id'] as string | undefined)?.trim();
-    const branchId = requested || user.defaultBranchId || undefined;
-    if (scoped || requested) {
-      if (!branchId) {
-        if (!user.allBranches) throw forbidden('Sizga filial biriktirilmagan', 'branch_forbidden');
-        // Egasi filial ko'rsatmagan: birinchi faol filial
-        const [first] = await this.db.select({ id: branches.id }).from(branches).where(eq(branches.active, true)).orderBy(branches.createdAt).limit(1);
-        if (!first) throw forbidden('Faol filial yo\'q', 'branch_inactive');
-        req.branchId = first.id;
-        return true;
-      }
-      if (!user.allBranches && !user.branchIds.includes(branchId)) throw forbidden('Bu filialga kirish huquqingiz yo\'q', 'branch_forbidden');
+    let branchId = requested || user.defaultBranchId || undefined;
+    if (!branchId && user.allBranches) {
+      const [first] = await this.db.select({ id: branches.id }).from(branches).where(eq(branches.active, true)).orderBy(branches.createdAt).limit(1);
+      branchId = first?.id;
+    }
+    if (!branchId) {
+      if (scoped) throw forbidden(user.allBranches ? "Faol filial yo'q" : 'Sizga filial biriktirilmagan', 'branch_forbidden');
+      return true;
+    }
+    if (!user.allBranches && !user.branchIds.includes(branchId)) throw forbidden("Bu filialga kirish huquqingiz yo'q", 'branch_forbidden');
+    if (requested || scoped) {
       const [b] = await this.db.select({ active: branches.active }).from(branches).where(eq(branches.id, branchId)).limit(1);
       if (!b) throw forbidden('Filial topilmadi', 'branch_forbidden');
       if (!b.active) throw forbidden('Filial nofaol', 'branch_inactive');
-      req.branchId = branchId;
     }
+    req.branchId = branchId;
     return true;
   }
 }

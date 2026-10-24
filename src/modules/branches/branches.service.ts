@@ -89,8 +89,7 @@ export class BranchesService {
   async overview(withCost: boolean) {
     const today = todayISO();
     const from30 = addDays(today, -29);
-    const tz = 'Asia/Tashkent';
-    const dayExpr = sql`(${sales.createdAt} at time zone ${tz})::date`;
+    const dayExpr = sql`(${sales.createdAt} at time zone 'Asia/Tashkent')::date`;
 
     const [list, salesAgg, stockAgg, openShifts, staff] = await Promise.all([
       this.db.select().from(branches).orderBy(asc(branches.createdAt)),

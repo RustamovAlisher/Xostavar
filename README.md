@@ -1,132 +1,78 @@
-<p align="center">
-  <a href="http://nestjs.com/" target="blank"><img src="https://nestjs.com/img/logo-small.svg" width="120" alt="Nest Logo" /></a>
-</p>
+# Temir Baza ERP/POS — Backend
 
-[circleci-image]: https://img.shields.io/circleci/build/github/nestjs/nest/master?token=abc123def456
-[circleci-url]: https://circleci.com/gh/nestjs/nest
+NestJS 12 · TypeScript · PostgreSQL 16 · Drizzle ORM · Redis. TZ: [`docs/tz/`](docs/tz/00-README.md).
 
-  <p align="center">A progressive <a href="http://nodejs.org" target="_blank">Node.js</a> framework for building efficient and scalable server-side applications.</p>
-    <p align="center">
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/v/@nestjs/core.svg" alt="NPM Version" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/l/@nestjs/core.svg" alt="Package License" /></a>
-<a href="https://www.npmjs.com/~nestjscore" target="_blank"><img src="https://img.shields.io/npm/dm/@nestjs/common.svg" alt="NPM Downloads" /></a>
-<a href="https://circleci.com/gh/nestjs/nest" target="_blank"><img src="https://img.shields.io/circleci/build/github/nestjs/nest/master" alt="CircleCI" /></a>
-<a href="https://discord.gg/G7Qnnhy" target="_blank"><img src="https://img.shields.io/badge/discord-online-brightgreen.svg" alt="Discord"/></a>
-<a href="https://opencollective.com/nest#backer" target="_blank"><img src="https://opencollective.com/nest/backers/badge.svg" alt="Backers on Open Collective" /></a>
-<a href="https://opencollective.com/nest#sponsor" target="_blank"><img src="https://opencollective.com/nest/sponsors/badge.svg" alt="Sponsors on Open Collective" /></a>
-  <a href="https://paypal.me/kamilmysliwiec" target="_blank"><img src="https://img.shields.io/badge/Donate-PayPal-ff3f59.svg" alt="Donate us"/></a>
-    <a href="https://opencollective.com/nest#sponsor"  target="_blank"><img src="https://img.shields.io/badge/Support%20us-Open%20Collective-41B883.svg" alt="Support us"></a>
-  <a href="https://twitter.com/nestframework" target="_blank"><img src="https://img.shields.io/twitter/follow/nestframework.svg?style=social&label=Follow" alt="Follow us on Twitter"></a>
-</p>
-  <!--[![Backers on Open Collective](https://opencollective.com/nest/backers/badge.svg)](https://opencollective.com/nest#backer)
-  [![Sponsors on Open Collective](https://opencollective.com/nest/sponsors/badge.svg)](https://opencollective.com/nest#sponsor)-->
-
-## Description
-
-[Nest](https://github.com/nestjs/nest) framework TypeScript starter repository.
-
-## Project setup
+## Ishga tushirish
 
 ```bash
-$ npm install
+cp .env.example .env        # kerak bo'lsa portlar va JWT sirini o'zgartiring
+npm install --legacy-peer-deps
+npm run db:up               # Postgres (5433) va Redis Docker'da
+npm run db:migrate          # drizzle/ dagi SQL migratsiyalar
+npm run db:seed             # lug'atlar, rollar, "main" filial, demo xodimlar (admin/1234), namuna katalog
+npm run start:dev
 ```
 
-## Compile and run the project
+- API: `http://localhost:3000/api/v1`, OpenAPI UI: `http://localhost:3000/api/docs`, JSON: `/api/docs-json`
+- Health: `GET /health`
+- Demo foydalanuvchilar (faqat `SEED_DEMO=true`): `admin`, `kassir`, `omborchi`, `buxgalter` — parol `1234`, birinchi kirishda almashtirish majburiy (`POST /auth/change-password`).
 
-```bash
-# development
-$ npm run start
+Lokal Postgres 5432 portni band qilgani uchun Docker'dagi baza **5433** da.
 
-# watch mode
-$ npm run start:dev
+## Buyruqlar
 
-# production mode
-$ npm run start:prod
+| Buyruq | Nima qiladi |
+|---|---|
+| `npm run db:generate` | `src/db/schema/` o'zgarishidan yangi SQL migratsiya yasaydi (`drizzle/`) |
+| `npm run db:migrate` | Migratsiyalarni bazaga qo'llaydi (qo'llanganlari takrorlanmaydi) |
+| `npm run db:seed` | Boshlang'ich ma'lumot (qayta ishga tushirish xavfsiz) |
+| `npm run db:studio` | Drizzle Studio — bazani brauzerda ko'rish |
+| `npm run typecheck` / `npm run lint` / `npm run build` | |
+
+## Tuzilma
+
+```
+src/
+  main.ts                 bootstrap: prefix /api/v1, CORS, validation, OpenAPI
+  app.module.ts           modullar, global filter/guard/interceptor
+  config/env.ts           muhit o'zgaruvchilari (zod bilan tekshiriladi)
+  db/
+    db.module.ts          Drizzle + pg Pool (DB token), numeric/bigint → number
+    schema/*.ts           jadvallar modul bo'yicha (TZ 7)
+    migrate.ts, seed.ts
+  common/
+    errors.ts             AppError + TZ 5.2 xato kodlari
+    http-exception.filter {"error": {code, message, details, requestId}}
+    auth-context.ts       @Perms, @BranchScoped, @CurrentUser, @BranchId
+    idempotency.interceptor  Idempotency-Key (Postgres'da 24 soat)
+    pricing.ts            birlik/narx/kesim hisobi — frontend calcLine bilan bir xil
+    pagination.ts, version.ts, numbers.ts
+  modules/
+    auth        login, refresh (rotation), sessiyalar, parol
+    users       xodimlar, rollar, filial admini cheklovlari
+    branches    filiallar, Bosh admin overview
+    settings    lug'atlar (GET/PUT butun to'plam), biznes qoidalari
+    catalog     mahsulotlar, variantlar, konversiyalar, shtrix-kodlar, lookup
+    inventory   stock_levels, kirim, o'rtacha tannarx, jurnal, tuzatish
+    customers   mijozlar, qarz jurnali
+    shifts      smena, Z-hisobot jamlari
+    sales       quote, sotuv (aralash to'lov, nasiya, kesim), storno, qarz to'lovi
+    expenses    xarajatlar, kassadan chiqim
+    reports     dashboard, revenue, products, cashiers, payments, debts, P&L, cash-flow
+    audit       audit jurnali
 ```
 
-## Run tests
+## Qoidalar (qisqa)
 
-```bash
-# unit tests
-$ npm run test
+- **Filial konteksti:** `X-Branch-Id` sarlavhasi; bo'lmasa xodimning standart filiali (egasi uchun birinchi faol filial). Biriktirilmagan filial → `403 branch_forbidden`.
+- **Pul** butun so'm (`bigint`), **miqdor** `numeric(18,4)`. Hisob faqat serverda: mijozdan `productId, variantId, unit, qty, cuts` olinadi.
+- **Idempotentlik:** `POST /sales`, `/stock-in`, `/stock-adjustments`, `/customers/:id/payments`, `/shifts/open|close`, `/expenses`, `/sales/:id/void` — `Idempotency-Key` majburiy.
+- **N+1 yo'q:** ro'yxatlar batch (`inArray`) yoki `GROUP BY` bilan; qoldiq o'zgarishi `FOR UPDATE` qulfi bilan, kalitlar tartiblangan (deadlock yo'q).
+- **Tannarx va foyda** faqat `view_cost_price` bilan javobga kiradi.
+- **Audit** biznes tranzaksiyasi bilan bir tranzaksiyada yoziladi.
 
-# e2e tests
-$ npm run test:e2e
+## Keyingi qadamlar
 
-# test coverage
-$ npm run test:cov
-```
-
-## Deployment
-
-When you're ready to deploy your NestJS application to production, there are some key steps you can take to ensure it runs as efficiently as possible. Check out the [deployment documentation](https://docs.nestjs.com/deployment) for more information.
-
-If you are looking for a cloud-based platform to deploy your NestJS application, check out [Mau](https://mau.nestjs.com), our official platform for deploying NestJS applications on AWS. Mau makes deployment straightforward and fast, requiring just a few simple steps:
-
-```bash
-$ npm install -g @nestjs/mau
-$ mau deploy
-```
-
-With Mau, you can deploy your application in just a few clicks, allowing you to focus on building features rather than managing infrastructure.
-
-## Observability
-
-In production applications, observability is essential for understanding how your system behaves, detecting issues early, and maintaining reliable performance.
-
-[NestJS Observe](https://observe.nestjs.com) automatically instruments your NestJS application, giving you deep visibility into your system with minimal setup:
-
-- **Distributed tracing:** Follow requests across services and understand how they flow through your system.
-- **Waterfall analysis:** Visualize request execution and identify slow operations, bottlenecks, and unexpected delays.
-- **Performance analysis:** Analyze application performance in real time and quickly pinpoint areas that need optimization.
-- **Metrics:** Track key application and infrastructure metrics to understand system health and performance trends.
-- **Logging:** Centralize and correlate logs with traces and other telemetry to make debugging easier.
-- **Error tracking:** Detect errors quickly and investigate their root causes with the surrounding context.
-- **SLA monitoring:** Track service-level objectives and identify when your application is approaching or exceeding defined thresholds.
-- **Alarms and alerts:** Set up alerts for critical errors, performance degradation, SLA violations, and other anomalies so your team can react quickly.
-
-To add it to this project, run this and approve the code it prints at [observe.nestjs.com/link](https://observe.nestjs.com/link) - signing up for free if you have no account:
-
-```bash
-$ npx @nestjs/observe link
-```
-
-It installs `@nestjs/observe`, wires it into `AppModule` and `main.ts`, and writes the app key and secret into `.env`, which every `nest start` script (`start`, `start:dev`, `start:debug`) then loads. In production, set `OBSERVE_APP_KEY` and `OBSERVE_APP_SECRET` in the environment instead.
-
-Or do it by hand:
-
-```bash
-$ npm install @nestjs/observe
-```
-
-Then follow the [setup guide](https://docs.nestjs.com/observability/sdk) - it takes a single import and an app key.
-
-The free plan needs no payment details and covers 300,000 events a month. You can also browse the [live demo](https://www.observe-demo.nestjs.com/dashboard) first - the whole dashboard over a busy service's data, with nothing to install.
-
-## Resources
-
-Check out a few resources that may come in handy when working with NestJS:
-
-- Visit the [NestJS Documentation](https://docs.nestjs.com) to learn more about the framework.
-- For questions and support, please visit our [Discord channel](https://discord.gg/G7Qnnhy).
-- To dive deeper and get more hands-on experience, check out our official video [courses](https://courses.nestjs.com/).
-- Deploy your application to AWS with the help of [NestJS Mau](https://mau.nestjs.com) in just a few clicks.
-- Auto-instrument your application with [NestJS Observe](https://observe.nestjs.com). Distributed tracing, metrics, and logging made easy. Error tracking and performance monitoring for your NestJS applications.
-- Visualize your application graph and interact with the NestJS application in real-time using [NestJS Devtools](https://devtools.nestjs.com).
-- Need help with your project (part-time to full-time)? Check out our official [enterprise support](https://enterprise.nestjs.com).
-- To stay in the loop and get updates, follow us on [X](https://x.com/nestframework) and [LinkedIn](https://linkedin.com/company/nestjs).
-- Looking for a job, or have a job to offer? Check out our official [Jobs board](https://jobs.nestjs.com).
-
-## Support
-
-Nest is an MIT-licensed open source project. It can grow thanks to the sponsors and support by the amazing backers. If you'd like to join them, please [read more here](https://docs.nestjs.com/support).
-
-## Stay in touch
-
-- Author - [Kamil Myśliwiec](https://twitter.com/kammysliwiec)
-- Website - [https://nestjs.com](https://nestjs.com/)
-- Twitter - [@nestframework](https://twitter.com/nestframework)
-
-## License
-
-Nest is [MIT licensed](https://github.com/nestjs/nest/blob/master/LICENSE).
+- Frontendni API ga ulash (TZ 14): `openapi-typescript` bilan tiplar, `store.ts` amallarini so'rovlarga almashtirish, brauzer ma'lumotini import qilish (`POST /admin/import`).
+- Real vaqt (`/events`), CSV import endpointi (`POST /products/import`), chek HTML/PDF shabloni.
+- Testlar: pricing golden-test (frontend bilan), integratsiya (Testcontainers), huquqlar matritsasi.

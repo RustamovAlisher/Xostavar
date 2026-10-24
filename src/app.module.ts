@@ -11,6 +11,12 @@ import { IdempotencyInterceptor } from './common/idempotency.interceptor.js';
 import { AuditModule } from './modules/audit/audit.module.js';
 import { AuthModule } from './modules/auth/auth.module.js';
 import { BranchesModule } from './modules/branches/branches.module.js';
+import { CatalogModule } from './modules/catalog/catalog.module.js';
+import { InventoryModule } from './modules/inventory/inventory.module.js';
+import { CustomersModule } from './modules/customers/customers.module.js';
+import { SalesModule } from './modules/sales/sales.module.js';
+import { ExpensesModule } from './modules/expenses/expenses.module.js';
+import { ReportsModule } from './modules/reports/reports.module.js';
 import { SettingsModule } from './modules/settings/settings.module.js';
 import { ShiftsModule } from './modules/shifts/shifts.module.js';
 import { UsersModule } from './modules/users/users.module.js';
@@ -44,6 +50,12 @@ import { HealthController } from './health.controller.js';
     BranchesModule,
     UsersModule,
     ShiftsModule,
+    CatalogModule,
+    InventoryModule,
+    CustomersModule,
+    SalesModule,
+    ExpensesModule,
+    ReportsModule,
   ],
   controllers: [HealthController],
   providers: [

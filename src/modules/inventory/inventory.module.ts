@@ -1,0 +1,7 @@
+import { Module, forwardRef } from '@nestjs/common';
+import { CatalogModule } from '../catalog/catalog.module.js';
+import { InventoryController } from './inventory.controller.js';
+import { InventoryService } from './inventory.service.js';
+
+@Module({ imports: [forwardRef(() => CatalogModule)], controllers: [InventoryController], providers: [InventoryService], exports: [InventoryService] })
+export class InventoryModule {}
