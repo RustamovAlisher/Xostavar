@@ -88,7 +88,7 @@ function translateHttp(status: number, message: string): string {
   if (status === 403 && /^forbidden( resource)?$/i.test(message)) return "Bu amal uchun huquqingiz yo'q";
   if (status === 404 && /^Cannot (GET|POST|PUT|PATCH|DELETE|HEAD|OPTIONS)/.test(message)) return 'Manzil topilmadi';
   if (status === 429) return "Juda ko'p so'rov, birozdan keyin urinib ko'ring";
-  if (/^Validation failed \(uuid is expected\)/.test(message)) return "Identifikator UUID formatida bo'lishi kerak";
-  if (/^Validation failed \(numeric string is expected\)/.test(message)) return "Son kutilgan edi";
+  if (message.startsWith('Validation failed (uuid is expected)')) return "Identifikator UUID formatida bo'lishi kerak";
+  if (message.startsWith('Validation failed (numeric string is expected)')) return 'Son kutilgan edi';
   return message;
 }
