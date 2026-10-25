@@ -1,17 +1,15 @@
-import { Inject, Injectable, Logger } from '@nestjs/common';
+import { HttpStatus, Injectable, Logger } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { JwtService } from '@nestjs/jwt';
 import argon2 from 'argon2';
-import { and, eq, gt, inArray, isNull, lt, or, sql } from 'drizzle-orm';
 import { createHash, randomBytes, randomUUID } from 'node:crypto';
-import { DB, type Db } from '../../../db/db.module.js';
-import { branches, loginAttempts, roles, sessions, userBranches, users } from '../../../entities/index.js';
+import type { DbOrTx } from '../../../db/db.module.js';
 import type { AuthUser } from '../../../common/decorators/auth-context.js';
 import { AppError, forbidden, unauthorized, unprocessable } from '../../../common/errors/app-error.js';
-import { isPermission, type Permission } from '../../../common/constants/permissions.js';
 import type { Env } from '../../../config/env.js';
 import { AuditService } from '../../audit/services/audit.service.js';
-import { HttpStatus } from '@nestjs/common';
+import { toAuthUser } from '../mappers/auth.mapper.js';
+import { AuthRepository } from '../repositories/auth.repository.js';
 
 const MAX_FAILED = 5;
 const MAX_FAILED_PER_IP = 30;
@@ -32,7 +30,7 @@ export class AuthService {
   private readonly cache = new Map<string, { at: number; user: AuthUser }>();
 
   constructor(
-    @Inject(DB) private readonly db: Db,
+    private readonly repo: AuthRepository,
     private readonly jwt: JwtService,
     private readonly config: ConfigService<Env, true>,
     private readonly audit: AuditService,
@@ -50,32 +48,10 @@ export class AuthService {
   async loadUser(userId: string): Promise<AuthUser | null> {
     const hit = this.cache.get(userId);
     if (hit && Date.now() - hit.at < USER_CACHE_MS) return hit.user;
-    const [row] = await this.db
-      .select({ u: users, r: roles })
-      .from(users)
-      .innerJoin(roles, eq(roles.id, users.roleId))
-      .where(and(eq(users.id, userId), isNull(users.deletedAt)))
-      .limit(1);
+    const row = await this.repo.findUserWithRole(userId);
     if (!row || !row.u.active) return null;
-    const ub = row.r.allBranches
-      ? []
-      : await this.db
-          .select({ branchId: userBranches.branchId, isDefault: userBranches.isDefault, active: branches.active })
-          .from(userBranches)
-          .innerJoin(branches, eq(branches.id, userBranches.branchId))
-          .where(eq(userBranches.userId, userId));
-    const user: AuthUser = {
-      id: row.u.id,
-      name: row.u.name,
-      username: row.u.username,
-      roleId: row.r.id,
-      roleName: row.r.name,
-      permissions: row.u.permissions.filter(isPermission) as Permission[],
-      allBranches: row.r.allBranches,
-      branchIds: ub.map((b) => b.branchId),
-      defaultBranchId: ub.find((b) => b.isDefault)?.branchId ?? ub[0]?.branchId ?? null,
-      mustChangePassword: row.u.mustChangePassword,
-    };
+    const ub = row.r.allBranches ? [] : await this.repo.userBranches(userId);
+    const user = toAuthUser(row.u, row.r, ub);
     this.cache.set(userId, { at: Date.now(), user });
     return user;
   }
@@ -85,7 +61,7 @@ export class AuthService {
   async isSessionAlive(sessionId: string): Promise<boolean> {
     const hit = this.sessionCache.get(sessionId);
     if (hit && Date.now() - hit.at < 5_000 && hit.alive) return true;
-    const [s] = await this.db.select({ revokedAt: sessions.revokedAt, expiresAt: sessions.expiresAt }).from(sessions).where(eq(sessions.id, sessionId)).limit(1);
+    const s = await this.repo.findSessionState(sessionId);
     const alive = !!s && !s.revokedAt && s.expiresAt > new Date();
     this.sessionCache.set(sessionId, { at: Date.now(), alive });
     return alive;
@@ -100,28 +76,16 @@ export class AuthService {
     // Bloklash (TZ 6.2): oxirgi 15 daqiqada shu login uchun 5 ta xato, yoki shu IP dan 30 ta xato
     // (do'konda hamma kassa bitta IP orqali chiqadi — bitta xato parol hammani bloklamasin)
     const since = new Date(Date.now() - LOCK_MINUTES * 60_000);
-    const [{ byLogin, byIp }] = await this.db
-      .select({
-        byLogin: sql<number>`count(case when ${loginAttempts.login} = ${key} then 1 end)::int`,
-        byIp: sql<number>`count(case when ${loginAttempts.ip} = ${meta.ip ?? null}::inet then 1 end)::int`,
-      })
-      .from(loginAttempts)
-      .where(and(eq(loginAttempts.success, false), gt(loginAttempts.createdAt, since)));
+    const { byLogin, byIp } = await this.repo.countFailedAttempts(key, meta.ip, since);
     if (byLogin >= MAX_FAILED || byIp >= MAX_FAILED_PER_IP) {
       this.logger.warn(`Login bloklandi: login=${key} ip=${meta.ip ?? '-'} byLogin=${byLogin} byIp=${byIp}`);
       throw new AppError('rate_limited', `Juda ko'p urinish. ${LOCK_MINUTES} daqiqadan keyin qayta urinib ko'ring`, HttpStatus.TOO_MANY_REQUESTS);
     }
 
-    const [row] = await this.db
-      .select({ u: users, r: roles })
-      .from(users)
-      .innerJoin(roles, eq(roles.id, users.roleId))
-      .where(and(or(eq(sql`lower(${users.username})`, key), eq(sql`lower(${users.email})`, key)), isNull(users.deletedAt)))
-      .limit(1);
-
+    const row = await this.repo.findUserByLogin(key);
     const ok = row ? await argon2.verify(row.u.passwordHash, password) : false;
-    await this.db.insert(loginAttempts).values({ login: key, ip: meta.ip ?? null, success: ok });
-    if (Math.random() < 0.02) void this.db.delete(loginAttempts).where(lt(loginAttempts.createdAt, new Date(Date.now() - 86_400_000))).catch(() => undefined);
+    await this.repo.insertAttempt({ login: key, ip: meta.ip ?? null, success: ok });
+    if (Math.random() < 0.02) void this.repo.purgeAttemptsBefore(new Date(Date.now() - 86_400_000)).catch(() => undefined);
     if (!row || !ok) {
       await this.audit.log(null, { action: 'login_failed', module: 'Xavfsizlik', targetName: key, details: 'Login yoki parol xato', ip: meta.ip, requestId: meta.requestId });
       throw unauthorized('Login yoki parol xato');
@@ -130,15 +94,11 @@ export class AuthService {
 
     // Biriktirilgan filiali nofaol bo'lsa kirmaydi (TZ 7.0.1)
     if (!row.r.allBranches) {
-      const ub = await this.db
-        .select({ active: branches.active })
-        .from(userBranches)
-        .innerJoin(branches, eq(branches.id, userBranches.branchId))
-        .where(eq(userBranches.userId, row.u.id));
+      const ub = await this.repo.userBranches(row.u.id);
       if (ub.length && !ub.some((b) => b.active)) throw forbidden('Sizga biriktirilgan filial faol emas', 'branch_inactive');
     }
 
-    await this.db.update(users).set({ lastLoginAt: new Date() }).where(eq(users.id, row.u.id));
+    await this.repo.touchLastLogin(row.u.id);
     this.invalidate(row.u.id);
     const tokens = await this.issueTokens(row.u.id, randomUUID(), meta);
     const user = await this.loadUser(row.u.id);
@@ -148,40 +108,42 @@ export class AuthService {
 
   /* ───────── Tokenlar ───────── */
 
-  private async issueTokens(userId: string, familyId: string, meta: { ip?: string; userAgent?: string }) {
+  private async issueTokens(userId: string, familyId: string, meta: { ip?: string; userAgent?: string }, tx?: DbOrTx) {
     const refreshToken = randomBytes(48).toString('base64url');
     const ttlDays = this.config.get('REFRESH_TTL_DAYS', { infer: true });
-    const [s] = await this.db
-      .insert(sessions)
-      .values({
-        userId,
-        familyId,
-        refreshHash: sha256(refreshToken),
-        userAgent: meta.userAgent?.slice(0, 300) ?? null,
-        ip: meta.ip ?? null,
-        expiresAt: new Date(Date.now() + ttlDays * 86_400_000),
-      })
-      .returning({ id: sessions.id });
-    const accessToken = await this.jwt.signAsync({ sub: userId, sid: s.id } satisfies JwtPayload);
-    return { accessToken, refreshToken, sessionId: s.id };
+    const sessionId = await this.repo.insertSession({
+      userId,
+      familyId,
+      refreshHash: sha256(refreshToken),
+      userAgent: meta.userAgent?.slice(0, 300) ?? null,
+      ip: meta.ip ?? null,
+      expiresAt: new Date(Date.now() + ttlDays * 86_400_000),
+    }, tx);
+    const accessToken = await this.jwt.signAsync({ sub: userId, sid: sessionId } satisfies JwtPayload);
+    return { accessToken, refreshToken, sessionId };
   }
 
   /** Rotation: eski refresh bekor qilinadi, yangisi beriladi. Bekor qilingan token qayta kelsa — butun oila o'chadi. */
   async refresh(refreshToken: string, meta: { ip?: string; userAgent?: string }) {
-    const hash = sha256(refreshToken);
-    const [s] = await this.db.select().from(sessions).where(eq(sessions.refreshHash, hash)).limit(1);
+    const s = await this.repo.findSessionByHash(sha256(refreshToken));
     if (!s) throw unauthorized('Sessiya topilmadi, qayta kiring');
     if (s.revokedAt) {
       // Token qayta ishlatilmoqda — o'g'irlangan bo'lishi mumkin
       this.logger.warn(`Refresh token qayta ishlatildi, sessiya oilasi bekor qilindi: userId=${s.userId} family=${s.familyId} ip=${meta.ip ?? '-'}`);
-      await this.db.update(sessions).set({ revokedAt: new Date() }).where(and(eq(sessions.familyId, s.familyId), isNull(sessions.revokedAt)));
+      await this.repo.revokeFamily(s.familyId);
       throw unauthorized('Sessiya bekor qilingan, qayta kiring');
     }
     if (s.expiresAt < new Date()) throw unauthorized('Sessiya muddati tugagan, qayta kiring');
     const user = await this.loadUser(s.userId);
     if (!user) throw unauthorized('Akkaunt faol emas');
-    await this.db.update(sessions).set({ revokedAt: new Date() }).where(eq(sessions.id, s.id));
-    const tokens = await this.issueTokens(s.userId, s.familyId, meta);
+    // Atomik rotation: eski sessiyani bekor qilish va yangisini yozish bitta tranzaksiyada.
+    // Ikki parallel refresh bir xil token bilan kelsa faqat bittasi yutadi; ikkinchisi qayta ishlatish deb hisoblanadi va oila bekor bo'ladi
+    const tokens = await this.repo.runInTx(async (tx) => ((await this.repo.revokeIfAlive(s.id, tx)) === 0 ? null : this.issueTokens(s.userId, s.familyId, meta, tx)));
+    if (!tokens) {
+      this.logger.warn(`Refresh token parallel qayta ishlatildi, sessiya oilasi bekor qilindi: userId=${s.userId} family=${s.familyId} ip=${meta.ip ?? '-'}`);
+      await this.repo.revokeFamily(s.familyId);
+      throw unauthorized('Sessiya bekor qilingan, qayta kiring');
+    }
     this.logger.debug(`Refresh: user=${user.username} session=${s.id} → ${tokens.sessionId}`);
     return { ...tokens, user };
   }
@@ -195,13 +157,13 @@ export class AuthService {
   }
 
   async logout(sessionId: string) {
-    await this.db.update(sessions).set({ revokedAt: new Date() }).where(and(eq(sessions.id, sessionId), isNull(sessions.revokedAt)));
+    await this.repo.revokeIfAlive(sessionId);
     this.sessionCache.delete(sessionId);
     this.logger.log(`Chiqish: session=${sessionId}`);
   }
 
   async logoutAll(userId: string) {
-    await this.db.update(sessions).set({ revokedAt: new Date() }).where(and(eq(sessions.userId, userId), isNull(sessions.revokedAt)));
+    await this.repo.revokeAllOfUser(userId);
     this.sessionCache.clear();
     this.logger.log(`Barcha sessiyalar yopildi: userId=${userId}`);
   }
@@ -209,19 +171,16 @@ export class AuthService {
   /** Foydalanuvchi nofaol qilinganda barcha sessiyalari darhol bekor (TZ 3.3 (5)). */
   async revokeUserSessions(userIds: string[]) {
     if (!userIds.length) return;
-    await this.db.update(sessions).set({ revokedAt: new Date() }).where(and(inArray(sessions.userId, userIds), isNull(sessions.revokedAt)));
+    await this.repo.revokeAllOfUsers(userIds);
     userIds.forEach((id) => this.invalidate(id));
   }
 
-  async listSessions(userId: string) {
-    return this.db
-      .select({ id: sessions.id, userAgent: sessions.userAgent, ip: sessions.ip, createdAt: sessions.createdAt, expiresAt: sessions.expiresAt })
-      .from(sessions)
-      .where(and(eq(sessions.userId, userId), isNull(sessions.revokedAt), gt(sessions.expiresAt, new Date())));
+  listSessions(userId: string) {
+    return this.repo.listAlive(userId);
   }
 
   async revokeSession(userId: string, sessionId: string) {
-    await this.db.update(sessions).set({ revokedAt: new Date() }).where(and(eq(sessions.id, sessionId), eq(sessions.userId, userId)));
+    await this.repo.revokeOwned(userId, sessionId);
     this.sessionCache.delete(sessionId);
   }
 
@@ -240,16 +199,13 @@ export class AuthService {
   }
 
   async changePassword(user: AuthUser, current: string, next: string, keepSessionId: string) {
-    const [u] = await this.db.select({ hash: users.passwordHash }).from(users).where(eq(users.id, user.id)).limit(1);
-    if (!u || !(await argon2.verify(u.hash, current))) throw unprocessable('validation_failed', "Joriy parol noto'g'ri");
+    const hash = await this.repo.passwordHashOf(user.id);
+    if (!hash || !(await argon2.verify(hash, current))) throw unprocessable('validation_failed', "Joriy parol noto'g'ri");
     if (current === next) throw unprocessable('validation_failed', 'Yangi parol eskisidan farq qilsin');
     AuthService.checkPolicy(next);
-    await this.db.update(users).set({ passwordHash: await AuthService.hash(next), mustChangePassword: false }).where(eq(users.id, user.id));
+    await this.repo.setPassword(user.id, await AuthService.hash(next));
     // Boshqa qurilmalardagi sessiyalar yopiladi, joriy qoladi
-    await this.db
-      .update(sessions)
-      .set({ revokedAt: new Date() })
-      .where(and(eq(sessions.userId, user.id), isNull(sessions.revokedAt), sql`${sessions.id} <> ${keepSessionId}`));
+    await this.repo.revokeOthersOfUser(user.id, keepSessionId);
     this.invalidate(user.id);
     this.sessionCache.clear();
     await this.audit.log(user, { action: 'user_update', module: 'Xodimlar', targetId: user.id, targetName: user.name, details: "O'z parolini almashtirdi" });

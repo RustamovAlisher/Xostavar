@@ -111,6 +111,15 @@ describe('auth (TZ 6)', () => {
       expect((await raw().post('/api/v1/auth/refresh').send({ refreshToken: r1.body.refreshToken })).status).toBe(401);
       expect((await raw().post('/api/v1/auth/refresh').send({ refreshToken: 'yoq' })).status).toBe(401);
     });
+    it('parallel refresh bir xil token bilan: faqat bittasi yutadi, qolgani 401 va oila bekor (atomik rotation)', async () => {
+      const first = await login(app, 'kassir');
+      const rs = await Promise.all([1, 2, 3].map(() => raw().post('/api/v1/auth/refresh').send({ refreshToken: first.refreshToken })));
+      const ok = rs.filter((r) => r.status === 200);
+      expect(ok.length).toBeLessThanOrEqual(1);
+      expect(rs.filter((r) => r.status === 401).length).toBeGreaterThanOrEqual(2);
+      // Qayta ishlatish aniqlandi → yutgan sessiya ham bekor
+      if (ok.length) expect((await raw().post('/api/v1/auth/refresh').send({ refreshToken: ok[0].body.refreshToken })).status).toBe(401);
+    });
     it('sessions ro\'yxati, bittasini o\'chirish, logout-all', async () => {
       const a = await login(app, 'omborchi');
       const b = await login(app, 'omborchi');

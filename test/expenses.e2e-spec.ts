@@ -77,8 +77,10 @@ describe('expenses (TZ 7.11, 9.12)', () => {
     expect(r.summary.byCategory.find((x: { name: string }) => x.name === 'Ijara').sum).toBeGreaterThan(0);
     expect((await c.get('/expenses?source=cash_register')).body.items.every((x: { source: string }) => x.source === 'cash_register')).toBe(true);
     expect((await c.get(`/expenses?categoryId=${cat}`)).body.items.every((x: { categoryId: string }) => x.categoryId === cat)).toBe(true);
+    const mainOne = await s.admin.post('/expenses', { date: today, categoryId: cat, amount: 1234, methodId: s.methods.card, source: 'other' });
+    expect(mainOne.status).toBe(201);
     const all = (await c.get('/expenses?branchId=all')).body;
-    expect(all.total).toBeGreaterThan(r.total); // buxgalterning main dagi yozuvi ham
+    expect(all.total).toBeGreaterThan(r.total); // main dagi yozuv ham
     const bux = (await as(app, 'buxgalter')).at(s.mainId);
     expect((await bux.get('/expenses?branchId=all')).body.items.every((x: { branchId: string }) => x.branchId === s.mainId)).toBe(true); // all faqat egasi uchun
   });

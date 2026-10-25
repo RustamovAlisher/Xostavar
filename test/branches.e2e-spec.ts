@@ -1,6 +1,6 @@
 import { INestApplication } from '@nestjs/common';
 import request from 'supertest';
-import { as, code, createApp, seeded, uniq, type Seeded } from './helpers.js';
+import { as, client, code, createApp, makeProduct, seeded, uniq, type Seeded } from './helpers.js';
 
 describe('branches (TZ 7.0, 7.0.1, 9.0)', () => {
   let app: INestApplication;
@@ -72,6 +72,25 @@ describe('branches (TZ 7.0, 7.0.1, 9.0)', () => {
       await s.admin.at(b.id).post('/shifts/close', {});
       expect((await s.admin.post(`/branches/${b.id}/deactivate`, {}, { idem: false })).body.active).toBe(false);
       expect((await s.admin.post(`/branches/${b.id}/activate`, {}, { idem: false })).body.active).toBe(true);
+    });
+    it('parallel deaktivatsiya: ikki filial bir vaqtda nofaol qilinsa ham kamida bittasi faol qoladi; nofaol filialda tuzatish 403', async () => {
+      const owner = client(app, s.admin.token); // X-Branch-Id siz: joriy filial nofaol bo'lib qolsa ham so'rovlar ishlaydi
+      const b1 = (await owner.post('/branches', { name: uniq('P1 ') }, { idem: false })).body;
+      const b2 = (await owner.post('/branches', { name: uniq('P2 ') }, { idem: false })).body;
+      const others = ((await owner.get('/branches')).body as { id: string; active: boolean }[]).filter((x) => x.active && x.id !== b1.id && x.id !== b2.id);
+      try {
+        for (const o of others) expect((await owner.post(`/branches/${o.id}/deactivate`, {}, { idem: false })).status).toBe(201);
+        const rs = await Promise.all([b1, b2].map((b) => owner.post(`/branches/${b.id}/deactivate`, {}, { idem: false })));
+        expect(rs.map((r) => r.status).sort()).toEqual([201, 409]);
+        expect(((await owner.get('/branches')).body as { active: boolean }[]).filter((x) => x.active).length).toBe(1);
+        const [off, on] = rs[0].status === 201 ? [b1, b2] : [b2, b1];
+        const p = await makeProduct(owner.at(on.id), s, { stock: 1 });
+        expect(code(await owner.at(off.id).post('/stock-adjustments', { productId: p.id, newStock: 5, reason: 'x' }))).toBe('branch_inactive'); // guard nofaol kontekstni service'ga yetkazmaydi
+        await owner.post(`/branches/${off.id}/activate`, {}, { idem: false });
+        expect((await owner.at(off.id).post('/stock-adjustments', { productId: p.id, newStock: 5, reason: 'x' })).status).toBe(201);
+      } finally {
+        for (const o of [...others, b1, b2]) await owner.post(`/branches/${o.id}/activate`, {}, { idem: false });
+      }
     });
     it('nofaol filialga biriktirilgan xodim kira olmaydi (branch_inactive); nofaol filial konteksti 403', async () => {
       const b = (await s.admin.post('/branches', { name: uniq('Nofaol ') }, { idem: false })).body;

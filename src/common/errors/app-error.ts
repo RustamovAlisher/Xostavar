@@ -51,8 +51,9 @@ export const unprocessable = (code: ErrorCode, message: string, details?: Record
 export const badRequest = (message: string, details?: Record<string, unknown>) =>
   new AppError('validation_failed', message, HttpStatus.BAD_REQUEST, details);
 
+const pgCode = (e: unknown) => (e as { code?: string })?.code ?? (e as { cause?: { code?: string } })?.cause?.code;
+
 /** Postgres unikal indeks buzilishi (Drizzle xatoni `cause` ichiga o'raydi). */
-export function isUniqueViolation(e: unknown): boolean {
-  const code = (e as { code?: string })?.code ?? (e as { cause?: { code?: string } })?.cause?.code;
-  return code === '23505';
-}
+export const isUniqueViolation = (e: unknown): boolean => pgCode(e) === '23505';
+/** Postgres tashqi kalit buzilishi (bog'liq yozuv bor yoki yo'q). */
+export const isForeignKeyViolation = (e: unknown): boolean => pgCode(e) === '23503';

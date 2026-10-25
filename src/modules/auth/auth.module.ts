@@ -6,6 +6,7 @@ import type { Env } from '../../config/env.js';
 import { ShiftsModule } from '../shifts/shifts.module.js';
 import { AuthController } from './controllers/auth.controller.js';
 import { AuthGuard } from './guards/auth.guard.js';
+import { AuthRepository } from './repositories/auth.repository.js';
 import { AuthService } from './services/auth.service.js';
 
 @Global()
@@ -21,7 +22,7 @@ import { AuthService } from './services/auth.service.js';
     ShiftsModule,
   ],
   controllers: [AuthController],
-  providers: [AuthService, { provide: APP_GUARD, useClass: AuthGuard }],
+  providers: [AuthService, AuthRepository, { provide: APP_GUARD, useClass: AuthGuard }],
   exports: [AuthService],
 })
 export class AuthModule {}

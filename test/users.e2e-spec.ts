@@ -84,22 +84,22 @@ describe('users & roles (TZ 3, 7.1, 8.12)', () => {
      * huquqi olingan aktyorning keshi darhol bekor qilinadi (403). Qoida boshqa instansiya bazani o'zgartirgan holat uchun:
      * uni to'g'ridan-to'g'ri SQL bilan taqlid qilamiz — A hali 10 s keshda admin, bazada emas.
      */
-    const stripAdminInDb = async (id: string) => {
+    /** Bazada `exceptId` dan boshqa hamma faol admindan manage_users olib qo'yiladi (boshqa test fayllari yaratgan adminlar ham) — qaytarish funksiyasi qaytadi. */
+    const stripAdminInDb = async (exceptId: string) => {
       const db = rawDb();
-      const { rows } = await db.query('select permissions from users where id = $1', [id]);
-      await db.query(`update users set permissions = array['view_pos'] where id = $1`, [id]);
+      const { rows } = await db.query(`select id, permissions from users where id <> $1 and 'manage_users' = any(permissions)`, [exceptId]);
+      await db.query(`update users set permissions = array_remove(permissions, 'manage_users') where id <> $1 and 'manage_users' = any(permissions)`, [exceptId]);
       await db.end();
       return async () => {
         const d2 = rawDb();
-        await d2.query('update users set permissions = $2 where id = $1', [id, rows[0].permissions]);
+        for (const r of rows) await d2.query('update users set permissions = $2 where id = $1', [r.id, r.permissions]);
         await d2.end();
       };
     };
 
     it('B huquqini olsa: bazada faol manage_users qolmaydi → 409 last_admin, tranzaksiya orqaga qaytadi', async () => {
       const b = (await newUser(s.admin, { roleId: roles['Super Admin'] })).body;
-      const a = (await s.admin.get('/auth/me')).body.user;
-      const restore = await stripAdminInDb(a.id);
+      const restore = await stripAdminInDb(b.id);
       try {
         const rs = [
           await s.admin.put(`/users/${b.id}/permissions`, { permissions: ['view_pos'] }),

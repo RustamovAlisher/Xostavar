@@ -73,6 +73,10 @@ describe('scope, frozen Z-report, branch prices, quote warnings', () => {
     expect(code(await c.put(`/products/${p.id}/branch-price`, { retailPrice: 0 }))).toBe('validation_failed');
     expect(code(await c.put(`/products/${p.id}/branch-price`, { retailPrice: 1, variantId: '00000000-0000-4000-8000-000000000000' }))).toBe('validation_failed');
     expect((await badmin.put(`/products/${p.id}/branch-price`, { retailPrice: 1 })).status).toBe(403); // edit_product yo'q
+    // Parallel PUT lar: upsert bitta so'rovda — 500 yo'q, oxirgi qiymat qoladi
+    const par = await Promise.all([1700, 1800, 1900].map((retailPrice) => c.put(`/products/${p.id}/branch-price`, { retailPrice })));
+    expect(par.map((r) => r.status)).toEqual([200, 200, 200]);
+    expect([1700, 1800, 1900]).toContain((await c.get(`/products/${p.id}`)).body.retailPrice);
     const d = await c.del(`/products/${p.id}/branch-price`);
     expect(d.body.retailPrice).toBe(1000);
     // Variantli mahsulot: variant uchun
@@ -81,6 +85,21 @@ describe('scope, frozen Z-report, branch prices, quote warnings', () => {
     const vr = await c.put(`/products/${arm.id}/branch-price`, { retailPrice: 200, variantId: arm.variants[0].id });
     expect(vr.body.variants[0].retailPrice).toBe(200);
     expect((await s.admin.get(`/products/${arm.id}`)).body.variants[0].retailPrice).toBe(100);
+  });
+
+  it('variantsiz mahsulot qoldig\'i bilan variantliga o\'tkazilmaydi (qoldiq yashirin qolmasin); qoldiq 0 bo\'lsa o\'tadi', async () => {
+    const c = s.admin.at(branchB);
+    const p = await makeProduct(c, s, { stock: 3, price: 1000 });
+    const full = (await c.get(`/products/${p.id}`)).body;
+    const toVariable = { name: full.name, categoryId: full.categoryId, sku: full.sku, baseUnit: full.baseUnit, isDivisible: full.isDivisible, conversions: [], isVariable: true, variants: [{ name: 'A', retailPrice: 1000 }], version: full.version };
+    const r = await c.put(`/products/${p.id}`, toVariable);
+    expect(code(r)).toBe('in_use');
+    expect(r.body.error.message).toMatch(/qoldiq/);
+    await c.post('/stock-adjustments', { productId: p.id, newStock: 0, reason: 'test' });
+    const ok = await c.put(`/products/${p.id}`, toVariable);
+    expect(ok.status).toBe(200);
+    expect(ok.body.isVariable).toBe(true);
+    expect(ok.body.stock).toBe(0);
   });
 
   it('quote: muddati o\'tgan mijoz va limit oshishi ogohlantirish sifatida (sotuvni to\'xtatmaydi)', async () => {

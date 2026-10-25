@@ -1,36 +1,17 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { and, asc, eq, inArray, isNull, ne, sql } from 'drizzle-orm';
 import { DB, type Db, type DbOrTx } from '../../../db/db.module.js';
 import { runTx } from '../../../db/tx.js';
-import { branches, roles, userBranches, users } from '../../../entities/index.js';
 import type { AuthUser } from '../../../common/decorators/auth-context.js';
-import { conflict, forbidden, notFound, unprocessable } from '../../../common/errors/app-error.js';
+import { conflict, forbidden, isForeignKeyViolation, notFound, unprocessable } from '../../../common/errors/app-error.js';
 import { OWNER_ONLY, type Permission } from '../../../common/constants/permissions.js';
 import { assertVersion } from '../../../common/utils/version.js';
 import { AuditService } from '../../audit/services/audit.service.js';
 import { AuthService } from '../../auth/services/auth.service.js';
 import type { CreateUserDto, ResetPasswordDto, RoleDto, SetBranchesDto, SetPermissionsDto, UpdateUserDto } from '../dto/users.dto.js';
+import { toUserList, toUserView, type UserView } from '../mappers/users.mapper.js';
+import { UsersRepository, type RoleRow } from '../repositories/users.repository.js';
 
-type UserRow = typeof users.$inferSelect;
-
-export interface UserView {
-  id: string;
-  name: string;
-  username: string;
-  email: string | null;
-  phone: string | null;
-  roleId: string;
-  role: string;
-  permissions: string[];
-  active: boolean;
-  mustChangePassword: boolean;
-  allBranches: boolean;
-  branchIds: string[];
-  defaultBranchId: string | null;
-  lastLoginAt: Date | null;
-  createdAt: Date;
-  version: number;
-}
+export type { UserView } from '../mappers/users.mapper.js';
 
 /**
  * Xodimlar va rollar (TZ 3.3, 7.1, 8.12).
@@ -40,6 +21,7 @@ export interface UserView {
 export class UsersService {
   constructor(
     @Inject(DB) private readonly db: Db,
+    private readonly repo: UsersRepository,
     private readonly audit: AuditService,
     private readonly auth: AuthService,
   ) {}
@@ -66,13 +48,13 @@ export class UsersService {
   }
 
   private async roleOrThrow(roleId: string) {
-    const [r] = await this.db.select().from(roles).where(eq(roles.id, roleId)).limit(1);
+    const r = await this.repo.findRole(roleId);
     if (!r) throw notFound('Rol');
     return r;
   }
 
   /** Filial admini egaga xos rolni (manage_branches/manage_settings yoki all_branches) bera olmaydi. */
-  private assertRoleAllowed(actor: AuthUser, role: typeof roles.$inferSelect) {
+  private assertRoleAllowed(actor: AuthUser, role: RoleRow) {
     if (actor.allBranches) return;
     if (role.allBranches || role.permissions.some((p) => OWNER_ONLY.includes(p as Permission))) {
       throw forbidden('Bu rolni faqat bosh admin bera oladi');
@@ -84,16 +66,9 @@ export class UsersService {
   /** Ro'yxat 2 ta so'rov: xodimlar (rol bilan) + barcha filial bog'lanishlari — N+1 yo'q. */
   async list(actor: AuthUser): Promise<UserView[]> {
     const scope = this.scopeOf(actor);
-    const rows = await this.db
-      .select({ u: users, r: roles })
-      .from(users)
-      .innerJoin(roles, eq(roles.id, users.roleId))
-      .where(isNull(users.deletedAt))
-      .orderBy(asc(users.createdAt));
-    const links = await this.db.select().from(userBranches).where(inArray(userBranches.userId, rows.map((r) => r.u.id).concat('00000000-0000-0000-0000-000000000000')));
-    const byUser = new Map<string, typeof links>();
-    for (const l of links) byUser.set(l.userId, [...(byUser.get(l.userId) ?? []), l]);
-    const views = rows.map((r) => this.toView(r.u, r.r, byUser.get(r.u.id) ?? []));
+    const rows = await this.repo.listWithRoles();
+    const links = await this.repo.branchLinksOf(rows.map((r) => r.u.id));
+    const views = toUserList(rows, links);
     // Filial admini faqat o'z filiali xodimlarini ko'radi (egasi va boshqa filial xodimlari ko'rinmaydi)
     return scope ? views.filter((v) => !v.allBranches && v.branchIds.includes(scope)) : views;
   }
@@ -105,19 +80,10 @@ export class UsersService {
   }
 
   private async getRaw(id: string): Promise<UserView> {
-    const [row] = await this.db.select({ u: users, r: roles }).from(users).innerJoin(roles, eq(roles.id, users.roleId)).where(and(eq(users.id, id), isNull(users.deletedAt))).limit(1);
+    const row = await this.repo.findWithRole(id);
     if (!row) throw notFound('Xodim');
-    const links = await this.db.select().from(userBranches).where(eq(userBranches.userId, id));
-    return this.toView(row.u, row.r, links);
-  }
-
-  private toView(u: UserRow, r: typeof roles.$inferSelect, links: (typeof userBranches.$inferSelect)[]): UserView {
-    return {
-      id: u.id, name: u.name, username: u.username, email: u.email, phone: u.phone, roleId: r.id, role: r.name,
-      permissions: u.permissions, active: u.active, mustChangePassword: u.mustChangePassword, allBranches: r.allBranches,
-      branchIds: links.map((l) => l.branchId), defaultBranchId: links.find((l) => l.isDefault)?.branchId ?? links[0]?.branchId ?? null,
-      lastLoginAt: u.lastLoginAt, createdAt: u.createdAt, version: u.version,
-    };
+    const links = await this.repo.branchLinksOfUser(id);
+    return toUserView(row.u, row.r, links);
   }
 
   private assertInScope(actor: AuthUser, target: UserView) {
@@ -129,12 +95,7 @@ export class UsersService {
   /* ───────── Yozish ───────── */
 
   private async assertUnique(username: string, email: string | null, exceptId?: string) {
-    const conds = [eq(sql`lower(${users.username})`, username.toLowerCase())];
-    if (email) conds.push(eq(sql`lower(${users.email})`, email.toLowerCase()));
-    const dup = await this.db
-      .select({ id: users.id, username: users.username })
-      .from(users)
-      .where(and(sql`(${sql.join(conds, sql` or `)})`, exceptId ? ne(users.id, exceptId) : undefined, isNull(users.deletedAt)));
+    const dup = await this.repo.findDuplicates(username, email, exceptId);
     if (dup.length) {
       const sameLogin = dup.some((d) => d.username.toLowerCase() === username.toLowerCase());
       throw conflict('duplicate_code', sameLogin ? 'Bu login band' : 'Bu email band');
@@ -143,23 +104,20 @@ export class UsersService {
 
   /** Kamida bitta faol `manage_users` qolishi shart (TZ 3.3 (4)). Tranzaksiya ichida chaqiriladi. */
   private async assertAdminRemains(tx: DbOrTx) {
-    const [{ n }] = await tx
-      .select({ n: sql<number>`count(*)::int` })
-      .from(users)
-      .where(and(eq(users.active, true), isNull(users.deletedAt), sql`'manage_users' = any(${users.permissions})`));
+    const n = await this.repo.countActiveAdmins(tx);
     if (n === 0) throw conflict('last_admin', 'Kamida bitta faol administrator (xodimlarni boshqarish huquqi) qolishi kerak');
   }
 
   private async setBranchesTx(tx: DbOrTx, userId: string, branchIds: string[], defaultBranchId?: string) {
     const ids = [...new Set(branchIds)];
     if (ids.length) {
-      const found = await tx.select({ id: branches.id }).from(branches).where(inArray(branches.id, ids));
-      if (found.length !== ids.length) throw notFound('Filial');
+      const found = await this.repo.countBranches(tx, ids);
+      if (found !== ids.length) throw notFound('Filial');
     }
-    await tx.delete(userBranches).where(eq(userBranches.userId, userId));
+    await this.repo.deleteBranchLinks(tx, userId);
     if (ids.length) {
       const def = defaultBranchId && ids.includes(defaultBranchId) ? defaultBranchId : ids[0];
-      await tx.insert(userBranches).values(ids.map((branchId) => ({ userId, branchId, isDefault: branchId === def })));
+      await this.repo.insertBranchLinks(tx, ids.map((branchId) => ({ userId, branchId, isDefault: branchId === def })));
     }
   }
 
@@ -177,10 +135,7 @@ export class UsersService {
     const hash = await AuthService.hash(dto.password);
 
     const view = await runTx(this.db, async (tx) => {
-      const [u] = await tx
-        .insert(users)
-        .values({ name: dto.name.trim(), username: dto.username.trim().toLowerCase(), email, phone: dto.phone?.trim() || null, roleId: role.id, permissions, passwordHash: hash, mustChangePassword: true, active: dto.active ?? true })
-        .returning();
+      const u = await this.repo.insert(tx, { name: dto.name.trim(), username: dto.username.trim().toLowerCase(), email, phone: dto.phone?.trim() || null, roleId: role.id, permissions, passwordHash: hash, mustChangePassword: true, active: dto.active ?? true });
       await this.setBranchesTx(tx, u.id, branchIds, dto.defaultBranchId);
       await this.audit.log(actor, { action: 'add', module: 'Xodimlar', targetId: u.id, targetName: u.name, details: `Yangi xodim (${role.name})` }, tx);
       return u.id;
@@ -211,14 +166,11 @@ export class UsersService {
     const hash = dto.password ? await AuthService.hash(dto.password) : undefined;
 
     await runTx(this.db, async (tx) => {
-      await tx
-        .update(users)
-        .set({
-          name: dto.name?.trim() ?? old.name, username, email, phone: dto.phone !== undefined ? dto.phone.trim() || null : old.phone,
-          roleId: role.id, permissions, active, version: old.version + 1,
-          ...(hash ? { passwordHash: hash, mustChangePassword: !isSelf } : {}),
-        })
-        .where(eq(users.id, id));
+      await this.repo.update(id, {
+        name: dto.name?.trim() ?? old.name, username, email, phone: dto.phone !== undefined ? dto.phone.trim() || null : old.phone,
+        roleId: role.id, permissions, active, version: old.version + 1,
+        ...(hash ? { passwordHash: hash, mustChangePassword: !isSelf } : {}),
+      }, tx);
       // Filiallar: filial admini o'zgartira olmaydi (majburan o'z filiali); egasi — so'rovdagi ro'yxat
       if (!scope && (dto.branchIds || role.allBranches !== old.allBranches)) {
         await this.setBranchesTx(tx, id, role.allBranches ? [] : (dto.branchIds ?? old.branchIds), dto.defaultBranchId);
@@ -241,7 +193,7 @@ export class UsersService {
     this.assertInScope(actor, old);
     const permissions = this.mergePerms(actor, dto.permissions, old.permissions);
     await runTx(this.db, async (tx) => {
-      await tx.update(users).set({ permissions, version: old.version + 1 }).where(eq(users.id, id));
+      await this.repo.update(id, { permissions, version: old.version + 1 }, tx);
       await this.assertAdminRemains(tx);
       await this.audit.log(actor, {
         action: 'user_update', module: 'Xodimlar', targetId: id, targetName: old.name, details: `Huquqlar yangilandi: ${permissions.length} ta`,
@@ -272,7 +224,7 @@ export class UsersService {
     this.assertInScope(actor, old);
     const active = !old.active;
     await runTx(this.db, async (tx) => {
-      await tx.update(users).set({ active, version: old.version + 1 }).where(eq(users.id, id));
+      await this.repo.update(id, { active, version: old.version + 1 }, tx);
       await this.assertAdminRemains(tx);
       await this.audit.log(actor, { action: 'user_update', module: 'Xodimlar', targetId: id, targetName: old.name, details: `Holat: ${active ? 'Faol' : 'Nofaol'}` }, tx);
     });
@@ -285,7 +237,7 @@ export class UsersService {
     const old = await this.getRaw(id);
     this.assertInScope(actor, old);
     AuthService.checkPolicy(dto.password);
-    await this.db.update(users).set({ passwordHash: await AuthService.hash(dto.password), mustChangePassword: id !== actor.id }).where(eq(users.id, id));
+    await this.repo.update(id, { passwordHash: await AuthService.hash(dto.password), mustChangePassword: id !== actor.id });
     await this.auth.revokeUserSessions([id]);
     await this.audit.log(actor, { action: 'password_reset', module: 'Xodimlar', targetId: id, targetName: old.name, details: 'Parol tiklandi (vaqtinchalik)' });
   }
@@ -297,8 +249,8 @@ export class UsersService {
     this.assertInScope(actor, old);
     await runTx(this.db, async (tx) => {
       // Login va email bo'shatiladi: keyin shu login bilan yangi xodim ochish mumkin
-      await tx.update(users).set({ deletedAt: new Date(), active: false, username: `${old.username}#del#${Date.now()}`, email: null }).where(eq(users.id, id));
-      await tx.delete(userBranches).where(eq(userBranches.userId, id));
+      await this.repo.softDelete(tx, id, `${old.username}#del#${Date.now()}`);
+      await this.repo.deleteBranchLinks(tx, id);
       await this.assertAdminRemains(tx);
       await this.audit.log(actor, { action: 'delete', module: 'Xodimlar', targetId: id, targetName: old.name, details: "Xodim o'chirildi" }, tx);
     });
@@ -308,14 +260,14 @@ export class UsersService {
   /* ───────── Rollar ───────── */
 
   listRoles() {
-    return this.db.select().from(roles).orderBy(asc(roles.sortOrder), asc(roles.createdAt));
+    return this.repo.listRoles();
   }
 
   async createRole(actor: AuthUser, dto: RoleDto) {
     this.assertRolePerms(dto);
-    const [dup] = await this.db.select({ id: roles.id }).from(roles).where(eq(sql`lower(${roles.name})`, dto.name.trim().toLowerCase())).limit(1);
+    const dup = await this.repo.findRoleByName(dto.name.trim());
     if (dup) throw conflict('duplicate_code', 'Bu nomli rol allaqachon bor');
-    const [r] = await this.db.insert(roles).values({ name: dto.name.trim(), permissions: dto.permissions, allBranches: dto.allBranches ?? false }).returning();
+    const r = await this.repo.insertRole({ name: dto.name.trim(), permissions: dto.permissions, allBranches: dto.allBranches ?? false });
     await this.audit.log(actor, { action: 'add', module: 'Sozlamalar', targetId: r.id, targetName: r.name, details: `Yangi rol, ${r.permissions.length} ta huquq` });
     return r;
   }
@@ -324,9 +276,9 @@ export class UsersService {
     const old = await this.roleOrThrow(id);
     assertVersion(old.version, dto.version, 'Rol');
     this.assertRolePerms(dto);
-    const [dup] = await this.db.select({ id: roles.id }).from(roles).where(and(eq(sql`lower(${roles.name})`, dto.name.trim().toLowerCase()), ne(roles.id, id))).limit(1);
+    const dup = await this.repo.findRoleByName(dto.name.trim(), id);
     if (dup) throw conflict('duplicate_code', 'Bu nomli rol allaqachon bor');
-    const [r] = await this.db.update(roles).set({ name: dto.name.trim(), permissions: dto.permissions, allBranches: dto.allBranches ?? old.allBranches, version: old.version + 1 }).where(eq(roles.id, id)).returning();
+    const r = await this.repo.updateRole(id, { name: dto.name.trim(), permissions: dto.permissions, allBranches: dto.allBranches ?? old.allBranches, version: old.version + 1 });
     // Rol shablonining o'zgarishi mavjud xodimlarga avtomatik qo'llanmaydi (TZ 7.1); nom o'zgarsa kesh yangilanadi
     this.auth.invalidate();
     await this.audit.log(actor, { action: 'edit', module: 'Sozlamalar', targetId: id, targetName: r.name, details: 'Rol tahrirlandi', diff: { before: { nomi: old.name, huquqlar: old.permissions.join(', ') }, after: { nomi: r.name, huquqlar: r.permissions.join(', ') } } });
@@ -342,18 +294,23 @@ export class UsersService {
 
   async deleteRole(actor: AuthUser, id: string) {
     const r = await this.roleOrThrow(id);
-    const [{ n, deleted }] = await this.db
-      .select({ n: sql<number>`count(case when ${users.deletedAt} is null then 1 end)::int`, deleted: sql<number>`count(case when ${users.deletedAt} is not null then 1 end)::int` })
-      .from(users)
-      .where(eq(users.roleId, id));
-    if (n > 0) throw conflict('in_use', `${n} ta xodim shu rolda`, { users: n });
-    if (deleted > 0) {
-      // O'chirilgan xodimlar tarix uchun saqlanadi — ularni standart "Kassir" roliga o'tkazib, rolni o'chiramiz
-      const [fallback] = await this.db.select({ id: roles.id }).from(roles).where(and(ne(roles.id, id), eq(roles.allBranches, false))).orderBy(asc(roles.sortOrder)).limit(1);
-      if (!fallback) throw conflict('in_use', "O'chirilgan xodimlar shu rolga bog'langan");
-      await this.db.update(users).set({ roleId: fallback.id }).where(and(eq(users.roleId, id), sql`${users.deletedAt} is not null`));
-    }
-    await this.db.delete(roles).where(eq(roles.id, id));
-    await this.audit.log(actor, { action: 'delete', module: 'Sozlamalar', targetId: id, targetName: r.name, details: "Rol o'chirildi" });
+    // Hammasi bitta tranzaksiyada: tekshiruv va o'chirish orasida shu rolda xodim yaratilsa FK xatosi (500) o'rniga 409 qaytadi
+    await runTx(this.db, async (tx) => {
+      const { n, deleted } = await this.repo.roleUsage(id, tx);
+      if (n > 0) throw conflict('in_use', `${n} ta xodim shu rolda`, { users: n });
+      if (deleted > 0) {
+        // O'chirilgan xodimlar tarix uchun saqlanadi — ularni standart "Kassir" roliga o'tkazib, rolni o'chiramiz
+        const fallback = await this.repo.fallbackRole(id, tx);
+        if (!fallback) throw conflict('in_use', "O'chirilgan xodimlar shu rolga bog'langan");
+        await this.repo.reassignDeletedUsers(id, fallback.id, tx);
+      }
+      try {
+        await this.repo.deleteRole(id, tx);
+      } catch (e) {
+        if (isForeignKeyViolation(e)) throw conflict('in_use', 'Shu rolda xodim bor');
+        throw e;
+      }
+      await this.audit.log(actor, { action: 'delete', module: 'Sozlamalar', targetId: id, targetName: r.name, details: "Rol o'chirildi" }, tx);
+    });
   }
 }

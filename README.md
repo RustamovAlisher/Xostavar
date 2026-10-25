@@ -31,36 +31,55 @@ Lokal Postgres 5432 portni band qilgani uchun Docker'dagi baza **5433** da.
 
 ## Tuzilma
 
+Qatlamlar Java loyihalaridagi kabi alohida papkalarda: **entity → repository → service → controller**, oraliqda **dto** (kiruvchi) va **mapper** (chiquvchi).
+
 ```
 src/
   main.ts                 bootstrap: prefix /api/v1, CORS, validation, OpenAPI
   app.module.ts           modullar, global filter/guard/interceptor
   config/env.ts           muhit o'zgaruvchilari (zod bilan tekshiriladi)
+  entities/*.ts           Drizzle jadvallari = entity (TZ 7); modul bo'yicha fayllar
   db/
     db.module.ts          Drizzle + pg Pool (DB token), numeric/bigint → number
-    schema/*.ts           jadvallar modul bo'yicha (TZ 7)
+    tx.ts                 runTx — deadlock/serialization da qayta urinish
     migrate.ts, seed.ts
   common/
-    errors.ts             AppError + TZ 5.2 xato kodlari
-    http-exception.filter {"error": {code, message, details, requestId}}
-    auth-context.ts       @Perms, @BranchScoped, @CurrentUser, @BranchId
-    idempotency.interceptor  Idempotency-Key (Postgres'da 24 soat)
-    pricing.ts            birlik/narx/kesim hisobi — frontend calcLine bilan bir xil
-    pagination.ts, version.ts, numbers.ts
-  modules/
-    auth        login, refresh (rotation), sessiyalar, parol
-    users       xodimlar, rollar, filial admini cheklovlari
-    branches    filiallar, Bosh admin overview
-    settings    lug'atlar (GET/PUT butun to'plam), biznes qoidalari
-    catalog     mahsulotlar, variantlar, konversiyalar, shtrix-kodlar, lookup
-    inventory   stock_levels, kirim, o'rtacha tannarx, jurnal, tuzatish
-    customers   mijozlar, qarz jurnali
-    shifts      smena, Z-hisobot jamlari
-    sales       quote, sotuv (aralash to'lov, nasiya, kesim), storno, qarz to'lovi
-    expenses    xarajatlar, kassadan chiqim
-    reports     dashboard, revenue, products, cashiers, payments, debts, P&L, cash-flow
-    audit       audit jurnali
+    decorators/           @Perms, @BranchScoped, @CurrentUser, @BranchId, AuthUser
+    filters/              HttpExceptionFilter → {"error": {code, message, details, requestId}} + log
+    interceptors/         Idempotency-Key (Postgres'da 24 soat)
+    pipes/                ValidationPipe, xabarlar o'zbekcha
+    errors/               AppError + TZ 5.2 kodlari; Postgres xatolari tarjimasi
+    utils/                pricing (frontend calcLine bilan bir xil), numbers, pagination, version
+    constants/            huquqlar ro'yxati
+  modules/<nom>/
+    <nom>.module.ts       DI: providers = service + repository, exports = service
+    controllers/          HTTP: yo'l, huquq, DTO → service chaqiruvi (logika yo'q)
+    dto/                  class-validator bilan kiruvchi ma'lumot
+    services/             biznes qoidalari, tranzaksiya (runTx), audit; SQL yozmaydi
+    repositories/         barcha Drizzle so'rovlari; `tx` qabul qiladi; xato tashlamaydi
+    mappers/              satr → API javobi (toXView); toza funksiyalar, DI yo'q
+    guards/, constants/   faqat kerak bo'lgan modulda (auth, settings)
 ```
+
+Modullar:
+
+```
+auth        login, refresh (rotation), sessiyalar, parol
+users       xodimlar, rollar, filial admini cheklovlari
+branches    filiallar, Bosh admin overview
+settings    lug'atlar (GET/PUT butun to'plam), biznes qoidalari
+catalog     mahsulotlar, variantlar, konversiyalar, shtrix-kodlar, lookup, filial narxi
+inventory   stock_levels, kirim, o'rtacha tannarx, jurnal, tuzatish
+customers   mijozlar, qarz jurnali
+shifts      smena, Z-hisobot jamlari
+sales       quote, sotuv (aralash to'lov, nasiya, kesim), storno, qarz to'lovi
+expenses    xarajatlar, kassadan chiqim
+reports     dashboard, revenue, products, cashiers, payments, debts, P&L, cash-flow
+audit       audit jurnali (jadval + info log)
+health      /health
+```
+
+Qoida: service `drizzle-orm` yoki `entities` ni import qilmaydi — SQL faqat repository da. Yangi modul yozganda `shifts` modulini namuna qiling.
 
 ## Testlar
 
@@ -73,9 +92,9 @@ Integratsiya testlari har yurishda test bazasini tozalab (`drop schema` → migr
 
 | Fayl | Nima tekshiriladi |
 |---|---|
-| `auth` | login, bloklash, majburiy parol almashtirish, parol siyosati, refresh rotation va qayta ishlatish, sessiyalar, nofaol xodim |
+| `auth` | login, bloklash, majburiy parol almashtirish, parol siyosati, refresh rotation (parallel refresh — atomik), qayta ishlatish, sessiyalar, nofaol xodim |
 | `users` | yaratish/tahrirlash qoidalari, o'z-o'zini o'zgartirish taqiqi, oxirgi admin (kesh poygasi bilan), filial admini doirasi, rollar |
-| `branches` | kod, nofaol qilish qoidalari, nofaol filial xodimi, `X-Branch-Id`, overview |
+| `branches` | kod, nofaol qilish qoidalari (parallel deaktivatsiya ham), nofaol filial xodimi, `X-Branch-Id`, overview |
 | `settings` | butun to'plam saqlash, validatsiya, `in_use`, to'lov usullari qoidalari, reset |
 | `catalog` | variantlar, avto SKU, kodlar unikalligi, qidiruv, lookup, tannarx yashirish, variant o'chirish, soft/hard delete |
 | `inventory` | kirim va o'rtacha tannarx, idempotentlik, filial izolyatsiyasi, jurnal, tuzatish, yaxlitlik |
@@ -88,7 +107,7 @@ Integratsiya testlari har yurishda test bazasini tozalab (`drop schema` → migr
 | `permissions` | huquqlar matritsasi: har endpoint ruxsatsiz rolda 403 |
 | `concurrency` | 20 parallel sotuv (qoldiq manfiy emas), parallel kirim+sotuv, parallel qarz to'lovlari, butun baza yaxlitligi |
 | `errors` | global xato formati: 404/400/413/422 tuzilmasi, `requestId`, validatsiya `details.errors` |
-| `scope` | id bilan so'rashda filial/egalik chegarasi, yopilgan smena Z-hisobotining storno/chiqim o'chirilgandan keyin qayta hisoblanishi, filial narxi, quote ogohlantirishlari, qidiruv indekslari |
+| `scope` | id bilan so'rashda filial/egalik chegarasi, yopilgan smena Z-hisobotining storno/chiqim o'chirilgandan keyin qayta hisoblanishi, filial narxi (parallel upsert), variantsiz→variantli o'tishda qoldiq, quote ogohlantirishlari, qidiruv indekslari |
 
 Sana testlarda `today()` yordamchisi bilan Toshkent vaqti bo'yicha olinadi (server ham shu zonada hisoblaydi).
 
@@ -103,8 +122,24 @@ Test bazasi manzili: `TEST_DATABASE_URL` (standart `postgres://xostavar:xostavar
 - **Tannarx va foyda** faqat `view_cost_price` bilan javobga kiradi.
 - **Audit** biznes tranzaksiyasi bilan bir tranzaksiyada yoziladi.
 
+## Loglar
+
+Hammasi pino orqali JSON (dev da `pino-pretty`), har yozuvda `requestId` (so'rov sarlavhasi `X-Request-Id` bilan bir xil):
+
+| Daraja | Qayerda | Nima |
+|---|---|---|
+| `info` | pino-http | har so'rov: metod, URL, status, davomiyligi (`/health` dan tashqari) |
+| `info` | `Audit` | har biznes voqea: modul/amal, obyekt, kim, filial, qisqa tafsilot |
+| `info` | `Auth` | kirish, chiqish, barcha sessiyalar yopilishi |
+| `warn` | `Auth` | login bloklandi, refresh token qayta ishlatildi (sessiya oilasi bekor) |
+| `warn` | `Http` | har 4xx: status, kod, yo'l, foydalanuvchi, mijozga ketgan xabar |
+| `warn` | `Tx` | deadlock/serialization — qayta urinish |
+| `error` | `Http` | har 5xx: to'liq stack va `cause`; mijozga faqat umumiy xabar |
+| `fatal` | process | `uncaughtException` / `unhandledRejection` |
+
+Parol, token, `Authorization`/`Cookie` sarlavhalari loglarga tushmaydi (redaksiya).
+
 ## Keyingi qadamlar
 
 - Frontendni API ga ulash (TZ 14): `openapi-typescript` bilan tiplar, `store.ts` amallarini so'rovlarga almashtirish, brauzer ma'lumotini import qilish (`POST /admin/import`).
 - Real vaqt (`/events`), CSV import endpointi (`POST /products/import`), chek HTML/PDF shabloni.
-- Testlar: pricing golden-test (frontend bilan), integratsiya (Testcontainers), huquqlar matritsasi.
