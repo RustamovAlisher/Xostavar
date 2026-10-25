@@ -1,6 +1,6 @@
 import { Logger } from '@nestjs/common';
 import type { Db, DbOrTx } from './db.module.js';
-import { isRetryable } from '../common/pg-errors.js';
+import { isRetryable } from '../common/errors/pg-errors.js';
 
 const logger = new Logger('Tx');
 const RETRIES = 3;

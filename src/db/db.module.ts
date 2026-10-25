@@ -2,7 +2,7 @@ import { Global, Module, type OnApplicationShutdown } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { drizzle, type NodePgDatabase } from 'drizzle-orm/node-postgres';
 import pg from 'pg';
-import * as schema from './schema/index.js';
+import * as schema from '../entities/index.js';
 import type { Env } from '../config/env.js';
 
 export const DB = Symbol('DB');

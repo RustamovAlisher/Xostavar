@@ -1,5 +1,5 @@
 import type { INestApplication } from '@nestjs/common';
-import { createValidationPipe } from './common/validation.js';
+import { createValidationPipe } from './common/pipes/validation.pipe.js';
 import { ConfigService } from '@nestjs/config';
 import type { Env } from './config/env.js';
 

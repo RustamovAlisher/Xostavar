@@ -4,9 +4,9 @@ import { APP_GUARD } from '@nestjs/core';
 import { JwtModule } from '@nestjs/jwt';
 import type { Env } from '../../config/env.js';
 import { ShiftsModule } from '../shifts/shifts.module.js';
-import { AuthController } from './auth.controller.js';
-import { AuthGuard } from './auth.guard.js';
-import { AuthService } from './auth.service.js';
+import { AuthController } from './controllers/auth.controller.js';
+import { AuthGuard } from './guards/auth.guard.js';
+import { AuthService } from './services/auth.service.js';
 
 @Global()
 @Module({

@@ -6,8 +6,8 @@ import { ThrottlerGuard, ThrottlerModule } from '@nestjs/throttler';
 import { LoggerModule } from 'nestjs-pino';
 import { validateEnv } from './config/env.js';
 import { DbModule } from './db/db.module.js';
-import { HttpExceptionFilter } from './common/http-exception.filter.js';
-import { IdempotencyInterceptor } from './common/idempotency.interceptor.js';
+import { HttpExceptionFilter } from './common/filters/http-exception.filter.js';
+import { IdempotencyInterceptor } from './common/interceptors/idempotency.interceptor.js';
 import { AuditModule } from './modules/audit/audit.module.js';
 import { AuthModule } from './modules/auth/auth.module.js';
 import { BranchesModule } from './modules/branches/branches.module.js';
@@ -20,7 +20,7 @@ import { ReportsModule } from './modules/reports/reports.module.js';
 import { SettingsModule } from './modules/settings/settings.module.js';
 import { ShiftsModule } from './modules/shifts/shifts.module.js';
 import { UsersModule } from './modules/users/users.module.js';
-import { HealthController } from './health.controller.js';
+import { HealthModule } from './modules/health/health.module.js';
 
 @Module({
   imports: [
@@ -50,6 +50,7 @@ import { HealthController } from './health.controller.js';
     AuthModule,
     BranchesModule,
     UsersModule,
+    HealthModule,
     ShiftsModule,
     CatalogModule,
     InventoryModule,
@@ -58,7 +59,6 @@ import { HealthController } from './health.controller.js';
     ExpensesModule,
     ReportsModule,
   ],
-  controllers: [HealthController],
   providers: [
     { provide: APP_FILTER, useClass: HttpExceptionFilter },
     { provide: APP_GUARD, useClass: ThrottlerGuard },

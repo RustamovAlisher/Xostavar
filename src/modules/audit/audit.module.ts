@@ -1,6 +1,6 @@
 import { Global, Module } from '@nestjs/common';
-import { AuditController } from './audit.controller.js';
-import { AuditService } from './audit.service.js';
+import { AuditController } from './controllers/audit.controller.js';
+import { AuditService } from './services/audit.service.js';
 
 /** Global: har modul o'z amalini auditga yozadi. */
 @Global()

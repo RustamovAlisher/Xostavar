@@ -23,7 +23,7 @@ Lokal Postgres 5432 portni band qilgani uchun Docker'dagi baza **5433** da.
 
 | Buyruq | Nima qiladi |
 |---|---|
-| `npm run db:generate` | `src/db/schema/` o'zgarishidan yangi SQL migratsiya yasaydi (`drizzle/`) |
+| `npm run db:generate` | `src/entities/` o'zgarishidan yangi SQL migratsiya yasaydi (`drizzle/`) |
 | `npm run db:migrate` | Migratsiyalarni bazaga qo'llaydi (qo'llanganlari takrorlanmaydi) |
 | `npm run db:seed` | Boshlang'ich ma'lumot (qayta ishga tushirish xavfsiz) |
 | `npm run db:studio` | Drizzle Studio — bazani brauzerda ko'rish |

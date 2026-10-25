@@ -3,8 +3,8 @@ import argon2 from 'argon2';
 import { eq, sql } from 'drizzle-orm';
 import { drizzle } from 'drizzle-orm/node-postgres';
 import pg from 'pg';
-import * as schema from './schema/index.js';
-import { DEFAULT_ROLES, DEFAULT_SETTINGS } from '../modules/settings/settings.defaults.js';
+import * as schema from '../entities/index.js';
+import { DEFAULT_ROLES, DEFAULT_SETTINGS } from '../modules/settings/constants/settings.defaults.js';
 
 /**
  * `npm run db:seed` — lug'atlar, standart rollar, bitta `main` filial (TZ 15).

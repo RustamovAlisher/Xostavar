@@ -1,6 +1,6 @@
 import { Global, Module } from '@nestjs/common';
-import { SettingsController } from './settings.controller.js';
-import { SettingsService } from './settings.service.js';
+import { SettingsController } from './controllers/settings.controller.js';
+import { SettingsService } from './services/settings.service.js';
 
 /** Global: kassa va ombor biznes qoidalarini shu yerdan oladi. */
 @Global()
