@@ -18,6 +18,8 @@ export class VariantDto {
   @IsInt() @Min(0) retailPrice: number;
   @IsOptional() @IsInt() @Min(0) wholesalePrice?: number | null;
   @IsOptional() @IsArray() @ValidateNested({ each: true }) @Type(() => ConversionDto) conversions?: ConversionDto[];
+  @ApiPropertyOptional({ description: 'Joriy filial uchun kam qoldiq chegarasi (faqat omborda bor variant uchun)' }) @IsOptional() @IsNumber() @Min(0) minStock?: number | null;
+  @ApiPropertyOptional({ description: 'Joriy filial uchun tannarx (faqat view_cost_price)' }) @IsOptional() @IsNumber() @Min(0) costPrice?: number | null;
 }
 
 export class ProductDto {

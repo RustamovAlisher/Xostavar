@@ -133,14 +133,14 @@ export class CatalogService {
     return this.repo.replaceChildren(tx, productId, convRows, codeRows);
   }
 
-  /** Joriy filial uchun min. qoldiq / tannarx (TZ 7.3): faqat mavjud stock_levels qatoriga yoziladi. */
+  /** Joriy filial uchun min. qoldiq / tannarx (TZ 7.3): qator bo'lmasa 0 qoldiq bilan yaratiladi. */
   private async writeLevelFields(tx: DbOrTx, user: AuthUser, branchId: string | null, productId: string, variantId: string | null, dto: { minStock?: number | null; costPrice?: number | null }) {
     if (!branchId || (dto.minStock === undefined && dto.costPrice === undefined)) return;
     const set: LevelFields = {};
     if (dto.minStock !== undefined) set.minStock = dto.minStock != null && dto.minStock > 0 ? dto.minStock : null;
     if (dto.costPrice !== undefined && user.permissions.includes('view_cost_price')) set.costPrice = dto.costPrice != null && dto.costPrice > 0 ? dto.costPrice : null;
     if (!Object.keys(set).length) return;
-    await this.repo.updateLevelFields(tx, branchId, productId, variantId, set);
+    await this.repo.upsertLevelFields(tx, branchId, productId, variantId, set);
   }
 
   async create(user: AuthUser, branchId: string | null, dto: ProductDto): Promise<ProductView> {
@@ -155,6 +155,8 @@ export class CatalogService {
         rows.forEach((r, i) => ids.set(i, r));
       }
       await this.writeChildren(tx, productId, dto, dto.isVariable ? variants : [], ids);
+      if (!dto.isVariable) await this.writeLevelFields(tx, user, branchId, productId, null, dto);
+      else for (const [i, v] of variants.entries()) await this.writeLevelFields(tx, user, branchId, productId, ids.get(i) ?? null, v);
       await this.audit.log(user, { action: 'add', module: 'Mahsulotlar', targetId: productId, targetName: dto.name.trim(), details: `Yangi mahsulot (SKU: ${sku})`, diff: { after: productSummary(dto, sku) } }, tx);
       return productId;
     });
@@ -202,6 +204,7 @@ export class CatalogService {
       await this.repo.updateProduct(tx, id, { ...toProductColumns(dto, sku), version: old.version + 1 });
       await this.writeChildren(tx, id, dto, dto.isVariable ? variants : [], ids);
       if (!dto.isVariable) await this.writeLevelFields(tx, user, branchId, id, null, dto);
+      else for (const [i, v] of variants.entries()) await this.writeLevelFields(tx, user, branchId, id, ids.get(i) ?? null, v);
       await this.audit.log(user, { action: 'edit', module: 'Mahsulotlar', targetId: id, targetName: dto.name.trim(), details: 'Mahsulot tahrirlandi', diff: { before: productSummary({ ...old, conversions: [], variants: [] } as unknown as ProductDto, old.sku), after: productSummary(dto, sku) } }, tx);
     });
     return this.get(user, branchId, id);

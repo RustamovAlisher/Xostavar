@@ -141,5 +141,6 @@ Parol, token, `Authorization`/`Cookie` sarlavhalari loglarga tushmaydi (redaksiy
 
 ## Keyingi qadamlar
 
-- Frontendni API ga ulash (TZ 14): `openapi-typescript` bilan tiplar, `store.ts` amallarini so'rovlarga almashtirish, brauzer ma'lumotini import qilish (`POST /admin/import`).
-- Real vaqt (`/events`), CSV import endpointi (`POST /products/import`), chek HTML/PDF shabloni.
+- Frontend API ga ulangan (`../frontend/src/api`): kirish, katalog, kirim, savdo, nasiya, smena, xarajat, hisobot, audit, xodimlar, filiallar.
+- Brauzer ma'lumotini import qilish (`POST /admin/import`, TZ 14.2) — faqat eski localStorage ma'lumoti kerak bo'lsa.
+- Real vaqt (`/events`), CSV import endpointi (`POST /products/import`), chek HTML/PDF shabloni, filiallar aro ko'chirish.

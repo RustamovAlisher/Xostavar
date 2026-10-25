@@ -184,9 +184,19 @@ export class CatalogRepository {
     if (codeRows.length) await tx.insert(productBarcodes).values(codeRows);
   }
 
-  /** Faqat mavjud stock_levels qatoriga yoziladi (TZ 7.3). */
-  updateLevelFields(tx: DbOrTx, branchId: string, productId: string, variantId: string | null, set: LevelFields) {
-    return tx.update(stockLevels).set(set).where(and(eq(stockLevels.branchId, branchId), eq(stockLevels.productId, productId), variantId ? eq(stockLevels.variantId, variantId) : isNull(stockLevels.variantId)));
+  /**
+   * Joriy filial uchun min. qoldiq / tannarx (TZ 7.3). Qator bo'lmasa 0 qoldiq bilan yaratiladi —
+   * katalog formasida kiritilgan chegara birinchi kirimgacha yo'qolib ketmasin (mahsulot shu filial omborida "0" bilan ko'rinadi).
+   */
+  upsertLevelFields(tx: DbOrTx, branchId: string, productId: string, variantId: string | null, set: LevelFields) {
+    const cols = Object.keys(set) as (keyof LevelFields)[];
+    const col = (k: keyof LevelFields) => sql.raw(k === 'minStock' ? 'min_stock' : 'cost_price');
+    const assignments = cols.map((k) => sql`${col(k)} = excluded.${col(k)}`);
+    return tx.execute(sql`
+      insert into ${stockLevels} (branch_id, product_id, variant_id, stock, min_stock, cost_price)
+      values (${branchId}, ${productId}, ${variantId}, 0, ${set.minStock ?? null}, ${set.costPrice ?? null})
+      on conflict (branch_id, product_id, coalesce(variant_id, ${sql.raw(`'${NIL}'::uuid`)}))
+      do update set ${sql.join(assignments, sql`, `)}, version = ${stockLevels}.version + 1, updated_at = now()`);
   }
 
   /* ───────── O'chirish (TZ 8.11) ───────── */

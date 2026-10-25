@@ -37,6 +37,21 @@ describe('catalog (TZ 7.3, 9.4)', () => {
       expect(v12.conversions).toEqual([{ unit: 'kg', factor: 1.1261 }]);
       expect(v12).toMatchObject({ stock: 0, retailPrice: 12500 });
     });
+    it('min qoldiq / tannarx katalog formasidan: filial qatori 0 qoldiq bilan yaratiladi (inBranch=true), kirimdan keyin chegara saqlanadi; variant uchun ham', async () => {
+      const r = await s.admin.post('/products', { name: uniq('Min '), categoryId: s.cats['Armatura'], baseUnit: 'piece', isDivisible: false, conversions: [], retailPrice: 1000, isVariable: false, minStock: 5, costPrice: 700 }, { idem: false });
+      expect(r.status).toBe(201);
+      expect(r.body).toMatchObject({ inBranch: true, stock: 0, minStock: 5, costPrice: 700 });
+      await s.admin.post('/stock-in', { lines: [{ productId: r.body.id, unit: 'piece', qty: 10, costPerUnit: 900 }] });
+      expect((await s.admin.get(`/products/${r.body.id}`)).body).toMatchObject({ stock: 10, minStock: 5, costPrice: 900 });
+      // Variantli: variant uchun minStock, boshqa filialga ta'sir qilmaydi
+      const v = await s.admin.post('/products', { ...armBody(), variants: [{ name: 'Ø 8', retailPrice: 100, minStock: 50 }] }, { idem: false });
+      expect(v.status).toBe(201);
+      expect(v.body.variants[0]).toMatchObject({ minStock: 50, stock: 0 });
+      expect(v.body.inBranch).toBe(true);
+      // Chegara berilmasa (import) — omborga qo'shilmaydi
+      const plain = await s.admin.post('/products', { name: uniq('Plain '), categoryId: s.cats['Armatura'], baseUnit: 'piece', isDivisible: false, conversions: [], retailPrice: 1000, isVariable: false }, { idem: false });
+      expect(plain.body.inBranch).toBe(false);
+    });
     it('validatsiya: birlik mavjud emas, konversiya asosiy birlik bilan bir xil, takror birlik, factor ≤ 0, variantsiz isVariable, kategoriya yo\'q', async () => {
       expect((await s.admin.post('/products', armBody({ baseUnit: 'yoq' }), { idem: false })).status).toBe(422);
       expect((await s.admin.post('/products', armBody({ conversions: [{ unit: 'meter', factor: 1 }] }), { idem: false })).status).toBe(422);
@@ -166,7 +181,8 @@ describe('catalog (TZ 7.3, 9.4)', () => {
       const r = await s.admin.put(`/products/${p.id}`, { name: get.name, categoryId: get.categoryId, sku: get.sku, baseUnit: 'piece', isDivisible: false, conversions: [], retailPrice: 10000, isVariable: false, minStock: 4, costPrice: 8000, version: get.version });
       expect(r.body).toMatchObject({ minStock: 4, costPrice: 8000 });
       // Boshqa filialda (omborda yo'q) o'zgarmaydi
-      const other = (await s.admin.get('/branches')).body.find((b: { id: string; active: boolean }) => b.id !== s.mainId && b.active);
+      const other = (await s.admin.get('/branches')).body.find((b: { id: string; active: boolean }) => b.id !== s.mainId && b.active)
+        ?? (await s.admin.post('/branches', { name: uniq('Min ') }, { idem: false })).body; // fayl yolg'iz yursa ham ikkinchi filial bo'lsin
       const o = (await s.admin.at(other.id).get(`/products/${p.id}`)).body;
       expect(o.minStock).toBeUndefined();
       expect(o.stock).toBe(0);
