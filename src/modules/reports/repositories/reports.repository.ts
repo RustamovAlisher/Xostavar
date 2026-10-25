@@ -1,7 +1,10 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { and, desc, eq, gte, inArray, isNull, lte, sql, type SQL } from 'drizzle-orm';
+import type { AnyPgColumn } from 'drizzle-orm/pg-core';
 import { DB, type Db, type DbOrTx } from '../../../db/db.module.js';
-import { categories, customers, expenseCategories, expenses, paymentMethods, productVariants, products, saleLines, salePayments, sales, stockLevels, stockReceipts, users } from '../../../entities/index.js';
+import { categories, customers, debtLedger, expenseCategories, expenses, paymentMethods, productVariants, products, saleLines, salePayments, sales, stockLevels, stockReceipts, users } from '../../../entities/index.js';
+
+export type Granularity = 'week' | 'month' | 'year';
 
 const TZ = 'Asia/Tashkent';
 
@@ -14,8 +17,13 @@ export class ReportsRepository {
   constructor(@Inject(DB) private readonly db: Db) {}
 
   /** Do'kon kuni (TZ 8.10). Vaqt zonasi literal: GROUP BY da parametr ($n) ishlatilsa Postgres ifodani tanimaydi. */
-  private day(col: SQL | typeof sales.createdAt) {
+  private day(col: SQL | AnyPgColumn) {
     return sql`(${col} at time zone ${sql.raw(`'${TZ}'`)})::date`;
+  }
+  /** Davr boshi (hafta dushanbadan, oy, yil) do'kon vaqt zonasida — `YYYY-MM-DD` matn. `g` enum (DTO tekshiradi), parametr emas. */
+  private period(col: SQL | AnyPgColumn, g: Granularity, isDate = false) {
+    const local = isDate ? sql`${col}::timestamp` : sql`(${col} at time zone ${sql.raw(`'${TZ}'`)})`;
+    return sql`date_trunc(${sql.raw(`'${g}'`)}, ${local})::date::text`;
   }
   private saleScope(scId: string | null) {
     return scId ? eq(sales.branchId, scId) : undefined;
@@ -239,6 +247,84 @@ export class ReportsRepository {
       .then((r) => r[0]);
   }
 
+  /* ───────── Davrlar bo'yicha dinamika (hafta / oy / yil) ───────── */
+
+  /** Cheklar davr bo'yicha: tushum, cheklar, savdo, chegirma, foyda, yangi nasiya, qarz to'lovlari. */
+  salesByPeriod(scId: string | null, from: string, to: string, g: Granularity, tx: DbOrTx = this.db) {
+    const p = this.period(sales.createdAt, g);
+    return tx
+      .select({
+        period: p,
+        revenue: sql<number>`coalesce(sum(${sales.paidAmount}), 0)::bigint`,
+        receipts: sql<number>`count(case when ${sales.type} = 'sale' then 1 end)::int`,
+        salesTotal: sql<number>`coalesce(sum(case when ${sales.type} = 'sale' then ${sales.totalAmount} end), 0)::bigint`,
+        discount: sql<number>`coalesce(sum(case when ${sales.type} = 'sale' then ${sales.discountAmount} end), 0)::bigint`,
+        profit: sql<number>`coalesce(sum(case when ${sales.type} = 'sale' then ${sales.profit} end), 0)::bigint`,
+        newDebt: sql<number>`coalesce(sum(${sales.remainingDebt}), 0)::bigint`,
+        debtPaid: sql<number>`coalesce(sum(case when ${sales.type} = 'debt_payment' then ${sales.paidAmount} end), 0)::bigint`,
+      })
+      .from(sales)
+      .where(this.completedIn(scId, from, to))
+      .groupBy(p)
+      .orderBy(p);
+  }
+
+  /** Xarajatlar davr bo'yicha (bekor qilinganlarsiz). */
+  expensesByPeriod(scId: string | null, from: string, to: string, g: Granularity, tx: DbOrTx = this.db) {
+    const p = this.period(expenses.date, g, true);
+    return tx
+      .select({ period: p, expenses: sql<number>`sum(${expenses.amount})::bigint`, fromRegister: sql<number>`coalesce(sum(case when ${expenses.source} = 'cash_register' then ${expenses.amount} end), 0)::bigint` })
+      .from(expenses)
+      .where(and(scId ? eq(expenses.branchId, scId) : undefined, isNull(expenses.voidedAt), gte(expenses.date, from), lte(expenses.date, to)))
+      .groupBy(p)
+      .orderBy(p);
+  }
+
+  /** Qarz jurnali davr bo'yicha: yangi nasiya, to'lovlar, storno/tuzatish (mijozlar umumiy; filial ixtiyoriy). */
+  debtLedgerByPeriod(scId: string | null, from: string, to: string, g: Granularity, tx: DbOrTx = this.db) {
+    const p = this.period(debtLedger.createdAt, g);
+    const dayExpr = this.day(debtLedger.createdAt);
+    return tx
+      .select({
+        period: p,
+        newDebt: sql<number>`coalesce(sum(case when ${debtLedger.type} = 'sale_debt' then ${debtLedger.amount} end), 0)::bigint`,
+        paid: sql<number>`coalesce(sum(case when ${debtLedger.type} = 'payment' then -${debtLedger.amount} end), 0)::bigint`,
+        other: sql<number>`coalesce(sum(case when ${debtLedger.type} in ('sale_void', 'adjustment') then ${debtLedger.amount} end), 0)::bigint`,
+        net: sql<number>`coalesce(sum(${debtLedger.amount}), 0)::bigint`,
+      })
+      .from(debtLedger)
+      .where(and(scId ? eq(debtLedger.branchId, scId) : undefined, gte(dayExpr, sql`${from}::date`), lte(dayExpr, sql`${to}::date`)))
+      .groupBy(p)
+      .orderBy(p);
+  }
+
+  /** Davr boshigacha bo'lgan umumiy qarz balansi (jurnal yig'indisi) — dinamika chizig'ining boshlang'ich nuqtasi. */
+  debtBalanceBefore(scId: string | null, from: string, tx: DbOrTx = this.db): Promise<number> {
+    return tx
+      .select({ sum: sql<number>`coalesce(sum(${debtLedger.amount}), 0)::bigint` })
+      .from(debtLedger)
+      .where(and(scId ? eq(debtLedger.branchId, scId) : undefined, sql`${this.day(debtLedger.createdAt)} < ${from}::date`))
+      .then((r) => r[0].sum);
+  }
+
+  /** Qarz holati: jami, qarzdorlar, muddati o'tgan (soni va summasi), 7 kun ichida muddati keladiganlar. */
+  debtSummary(today: string, tx: DbOrTx = this.db) {
+    const soon = sql`${today}::date + 7`;
+    return tx
+      .select({
+        total: sql<number>`coalesce(sum(${customers.totalDebt}), 0)::bigint`,
+        debtors: sql<number>`count(*)::int`,
+        overdueCount: sql<number>`count(case when ${customers.dueDate} < ${today}::date then 1 end)::int`,
+        overdueSum: sql<number>`coalesce(sum(case when ${customers.dueDate} < ${today}::date then ${customers.totalDebt} end), 0)::bigint`,
+        dueSoonCount: sql<number>`count(case when ${customers.dueDate} >= ${today}::date and ${customers.dueDate} <= ${soon} then 1 end)::int`,
+        dueSoonSum: sql<number>`coalesce(sum(case when ${customers.dueDate} >= ${today}::date and ${customers.dueDate} <= ${soon} then ${customers.totalDebt} end), 0)::bigint`,
+        creditLimit: sql<number>`coalesce(sum(${customers.creditLimit}), 0)::bigint`,
+      })
+      .from(customers)
+      .where(and(isNull(customers.deletedAt), sql`${customers.totalDebt} > 0`))
+      .then((r) => r[0]);
+  }
+
   /** Xarajatlar to'lov usuli bo'yicha (kassa oqimi chiqimi). */
   expensesByMethod(scId: string | null, from: string, to: string, tx: DbOrTx = this.db) {
     return tx
@@ -266,3 +352,7 @@ export type DebtorRow = Result<'debtors'>[number];
 export type PaymentRow = Result<'paymentsByMethod'>[number];
 export type SalesSummaryRow = Result<'salesSummary'>;
 export type ExpenseByMethodRow = Result<'expensesByMethod'>[number];
+export type SalesPeriodRow = Result<'salesByPeriod'>[number];
+export type ExpensePeriodRow = Result<'expensesByPeriod'>[number];
+export type DebtLedgerPeriodRow = Result<'debtLedgerByPeriod'>[number];
+export type DebtSummaryRow = Result<'debtSummary'>;

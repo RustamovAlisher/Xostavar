@@ -116,6 +116,63 @@ describe('reports (TZ 8.10, 9.9)', () => {
     expect((await c.get('/reports/revenue?from=bad')).status).toBe(400);
   });
 
+  it('periods: oy/hafta/yil bo\'yicha tushum, foyda, xarajat, sof foyda; bo\'sh davrlar 0; huquqsiz maydonlar yashirin', async () => {
+    const m = (await c.get(`/reports/periods?granularity=month&from=${today.slice(0, 4)}-01-01&to=${today}`)).body;
+    expect(m.granularity).toBe('month');
+    expect(m.items.length).toBe(Number(today.slice(5, 7)));
+    const cur = m.items[m.items.length - 1];
+    expect(cur).toMatchObject({ label: today.slice(0, 7), revenue: 27000, receipts: 3, salesTotal: 39000, discount: 1000, grossProfit: 21000, expenses: 2700, expensesFromRegister: 2000, netProfit: 18300, nasiyaWritten: 15000, debtPaid: 3000, avgReceipt: 13000 });
+    expect(m.items[0].to >= m.items[0].from).toBe(true);
+    expect(m.totals).toMatchObject({ revenue: 27000, grossProfit: 21000, expenses: 2700, netProfit: 18300 });
+    expect(m.best).toMatchObject({ label: today.slice(0, 7), value: 18300 });
+    expect(m.measure).toBe('netProfit');
+    // hafta: standart 12 hafta, oxirgisi bugungi hafta
+    const w = (await c.get('/reports/periods?granularity=week')).body;
+    expect(w.items.length).toBe(12);
+    expect(w.items[11].revenue).toBe(27000);
+    expect(w.items[11].label).toMatch(/^\d{4}-W\d{2}$/);
+    // yil: 5 yil
+    const y = (await c.get('/reports/periods?granularity=year')).body;
+    expect(y.items.length).toBe(5);
+    expect(y.items[4].label).toBe(today.slice(0, 4));
+    expect(y.items[4].netProfit).toBe(18300);
+    // buxgalter: tannarx + xarajat bor; kassir: 403; noto'g'ri granularity 400
+    expect((await s.buxgalter.get('/reports/periods')).body.totals).toHaveProperty('netProfit'); // buxgalter o'z filialida (main) ko'radi
+    expect((await s.kassir.get('/reports/periods')).status).toBe(403);
+    expect((await c.get('/reports/periods?granularity=day')).status).toBe(400);
+    // omborchi/xodim: view_analytics bor, view_cost_price yo'q — foyda yo'q (filial admini roli bilan tekshiramiz)
+    const roleId = (await s.admin.get('/roles')).body.find((r: { name: string }) => r.name === 'Filial admini').id;
+    const u = (await s.admin.post('/users', { name: 'FA', username: uniq('fa'), roleId, permissions: ['view_pos', 'view_analytics'], password: 'Parol-12345', branchIds: [branch] }, { idem: false })).body;
+    const fa = await as(app, u.username, 'Parol-12345');
+    await fa.post('/auth/change-password', { currentPassword: 'Parol-12345', newPassword: 'Filial-Admin-R1' }, { idem: false });
+    const noCost = (await fa.get('/reports/periods?granularity=month')).body;
+    expect(noCost.items[noCost.items.length - 1]).not.toHaveProperty('grossProfit');
+    expect(noCost.items[noCost.items.length - 1]).not.toHaveProperty('expenses');
+    expect(noCost.measure).toBe('revenue');
+  });
+  it('debts/overview: holat, aging, davr dinamikasi (balans), eng katta qarzdorlar; kassir (view_debts) ham ko\'radi', async () => {
+    const d = (await c.get(`/reports/debts/overview?granularity=month&from=${today.slice(0, 7)}-01&to=${today}`)).body;
+    expect(d.summary.debtors).toBeGreaterThanOrEqual(1);
+    expect(d.summary.total).toBeGreaterThanOrEqual(12000);
+    expect(d.summary).toHaveProperty('overdueCount');
+    expect(d.summary).toHaveProperty('dueSoonCount');
+    expect(d.aging.sum).toHaveProperty('current');
+    expect(d.aging.count).toHaveProperty('current');
+    const cur = d.dynamics[d.dynamics.length - 1];
+    expect(cur.label).toBe(today.slice(0, 7));
+    expect(cur.newDebt).toBeGreaterThanOrEqual(15000);
+    expect(cur.paid).toBeGreaterThanOrEqual(3000);
+    expect(d.summary.closingBalance).toBe(d.summary.openingBalance + d.totals.net);
+    expect(d.top.length).toBeGreaterThanOrEqual(1);
+    expect(d.top[0].totalDebt).toBeGreaterThanOrEqual(d.top[d.top.length - 1].totalDebt);
+    // faqat shu filial jurnali
+    const b = (await c.get(`/reports/debts/overview?granularity=month&branchId=${branch}&from=${today.slice(0, 7)}-01&to=${today}`)).body;
+    expect(b.dynamics[b.dynamics.length - 1]).toMatchObject({ newDebt: 15000, paid: 3000, net: 12000 });
+    expect(b.summary.openingBalance).toBe(0);
+    expect(b.summary.closingBalance).toBe(12000);
+    expect((await s.kassir.get('/reports/debts/overview')).status).toBe(200);
+    expect((await s.omborchi.get('/reports/debts/overview')).status).toBe(403);
+  });
   it('low-stock ro\'yxati va kassir uchun 403 (view_inventory/view_analytics yo\'q)', async () => {
     const low = (await c.get('/reports/low-stock')).body;
     expect(low.length).toBe(1);

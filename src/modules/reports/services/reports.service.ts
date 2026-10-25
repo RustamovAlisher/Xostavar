@@ -2,8 +2,8 @@ import { Injectable } from '@nestjs/common';
 import type { AuthUser } from '../../../common/decorators/auth-context.js';
 import { forbidden } from '../../../common/errors/app-error.js';
 import { addDays, todayISO } from '../../../common/utils/numbers.js';
-import { toCashFlow, toDashboard, toDebts, toLowStockList, toProductsReport, toProfitLoss, toRevenue } from '../mappers/reports.mapper.js';
-import { ReportsRepository } from '../repositories/reports.repository.js';
+import { toCashFlow, toDashboard, toDebts, toDebtsOverview, toLowStockList, toPeriods, toProductsReport, toProfitLoss, toRevenue } from '../mappers/reports.mapper.js';
+import { ReportsRepository, type Granularity } from '../repositories/reports.repository.js';
 
 type Range = { from: string; to: string; branchId?: string };
 
@@ -89,6 +89,25 @@ export class ReportsService {
     const scId = this.scope(user, branchId, q.branchId);
     const [inflow, outflow] = await Promise.all([this.repo.paymentsByMethod(scId, q.from, q.to), this.repo.expensesByMethod(scId, q.from, q.to)]);
     return toCashFlow(inflow, outflow);
+  }
+
+  /** Davrlar dinamikasi (hafta/oy/yil): tushum, foyda, xarajat, sof foyda — bo'sh davrlar 0 bilan. */
+  async periods(user: AuthUser, branchId: string, q: Range & { granularity: Granularity }) {
+    const scId = this.scope(user, branchId, q.branchId);
+    const withCost = user.permissions.includes('view_cost_price');
+    const withExp = user.permissions.includes('view_expenses');
+    const [sales, exp] = await Promise.all([this.repo.salesByPeriod(scId, q.from, q.to, q.granularity), withExp ? this.repo.expensesByPeriod(scId, q.from, q.to, q.granularity) : []]);
+    return toPeriods({ from: q.from, to: q.to, g: q.granularity, withCost, withExp, sales, exp });
+  }
+
+  /** Qarzlar sahifasi: holat, aging, davr dinamikasi, eng katta qarzdorlar. Mijozlar umumiy — filial faqat jurnal dinamikasi uchun. */
+  async debtsOverview(user: AuthUser, branchId: string, q: Range & { granularity: Granularity; top?: number }) {
+    const scId = this.scopeId(user, branchId, q.branchId ?? 'all');
+    const today = todayISO();
+    const [summary, debtors, ledger, opening] = await Promise.all([
+      this.repo.debtSummary(today), this.repo.debtors(today), this.repo.debtLedgerByPeriod(scId, q.from, q.to, q.granularity), this.repo.debtBalanceBefore(scId, q.from),
+    ]);
+    return toDebtsOverview({ from: q.from, to: q.to, g: q.granularity, summary, debtors, ledger, opening, top: q.top ?? 10 });
   }
 
   /** Kam qoldiq ro'yxati (frontend Bosh admin sahifasi `GET /branches/overview` da). `all` egasiga hammasi, filial xodimiga o'z filiallari. */
