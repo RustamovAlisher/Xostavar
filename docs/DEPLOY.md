@@ -29,6 +29,8 @@ Kodni yangilang (git pull yoki rsync), so'ng `SKIP_PULL=1 ./deploy.sh`
 ## Zaxira va tiklash
 - `backup` xizmati har kuni `BACKUP_TIMES` soatlarida (standart 14:00 va 22:00, Toshkent) `deploy/backups/*.dump` ga yozadi, `BACKUP_KEEP_DAYS` kundan eskisini o'chiradi.
 - Server tashqarisiga nusxa: lokal kompyuterda `deploy/pull-backups.sh` (rsync bilan `~/xostavar-zaxira/` ga tortadi).
+- Telegram: `.env.prod` da `TELEGRAM_BOT_TOKEN` va `TELEGRAM_CHAT_ID` to'ldirilsa har zaxira guruhga fayl bo'lib boradi, xatoda ogohlantirish keladi.
+- Qo'lda darhol zaxira: `./backup-now.sh`.
 - Tiklash: `./restore.sh backups/<fayl>.dump`.
 - Zaxirani server tashqarisiga ham nusxalang (`rsync`/`scp`) — bitta diskka ishonmang.
 

@@ -61,7 +61,8 @@ services:
     ports:
       - '127.0.0.1:${HTTP_PORT:-8083}:80'
 
-  # Zaxira: har kuni BACKUP_TIMES soatlarida (Toshkent vaqti) pg_dump → ./backups, BACKUP_KEEP_DAYS kundan eskisi o'chiriladi
+  # Zaxira: har kuni BACKUP_TIMES soatlarida (Toshkent) pg_dump → ./backups (+ Telegram), BACKUP_KEEP_DAYS kundan eskisi o'chiriladi.
+  # Qo'lda: ./backup-now.sh
   backup:
     image: postgres:16-alpine
     restart: unless-stopped
@@ -71,27 +72,25 @@ services:
       DB_USER: ${DB_USER:-xostavar}
       KEEP_DAYS: ${BACKUP_KEEP_DAYS:-14}
       BACKUP_TIMES: ${BACKUP_TIMES:-14:00 22:00}
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
+      TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-}
       TZ: Asia/Tashkent
     volumes:
       - ./backups:/backups
+      - ./backup.sh:/backup.sh:ro
     depends_on:
       postgres:
         condition: service_healthy
     entrypoint: ['sh', '-c']
     command:
       - |
-        echo "zaxira vaqtlari: $$BACKUP_TIMES (Asia/Tashkent)"
+        apk add --no-cache -q curl >/dev/null 2>&1 || echo "curl o'rnatilmadi — Telegram ishlamaydi"
+        echo "zaxira vaqtlari: $$BACKUP_TIMES (Asia/Tashkent); telegram: $${TELEGRAM_CHAT_ID:+yoqilgan}$${TELEGRAM_CHAT_ID:-o'chiq}"
         last=""
         while true; do
           now=$$(date +%H:%M); today=$$(date +%Y%m%d)
           for t in $$BACKUP_TIMES; do
-            if [ "$$now" = "$$t" ] && [ "$$last" != "$$today-$$t" ]; then
-              last="$$today-$$t"
-              until pg_isready -h postgres -U "$$DB_USER" -q; do echo "postgres kutilmoqda"; sleep 5; done
-              f=/backups/xostavar-$$(date +%Y%m%d-%H%M).dump
-              if pg_dump -h postgres -U "$$DB_USER" -d "$$DB_NAME" -Fc -f "$$f"; then echo "zaxira: $$f ($$(du -h "$$f" | cut -f1))"; else echo "zaxira XATO"; rm -f "$$f"; fi
-              find /backups -name 'xostavar-*.dump' -mtime +"$$KEEP_DAYS" -delete
-            fi
+            if [ "$$now" = "$$t" ] && [ "$$last" != "$$today-$$t" ]; then last="$$today-$$t"; sh /backup.sh; fi
           done
           sleep 20
         done
