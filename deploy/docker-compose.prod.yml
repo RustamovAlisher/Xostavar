@@ -59,7 +59,7 @@ services:
     depends_on:
       - backend
     ports:
-      - '127.0.0.1:${HTTP_PORT:-8083}:80'
+      - '127.0.0.1:${HTTP_PORT:-8700}:80'
 
   # Zaxira: har kuni BACKUP_TIMES soatlarida (Toshkent) pg_dump → ./backups (+ Telegram), BACKUP_KEEP_DAYS kundan eskisi o'chiriladi.
   # Qo'lda: ./backup-now.sh

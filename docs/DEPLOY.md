@@ -2,7 +2,7 @@
 
 Xostavar serverdagi boshqa loyihalardan to'liq ajratilgan holda ishlaydi:
 o'zining Postgres/Redis konteyneri, alohida volume va tarmoq (`xostavar_*`),
-faqat `127.0.0.1:8083` da ochiladi. Tashqariga hostdagi Nginx chiqaradi.
+faqat `127.0.0.1:8700` da ochiladi (boshqa loyihalar 80xx–90xx portlarni ishlatadi). Tashqariga hostdagi Nginx chiqaradi.
 
 ## Tuzilma
 Server papkasi (ikkala repo yonma-yon):
