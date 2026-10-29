@@ -16,10 +16,10 @@ describe('users & roles (TZ 3, 7.1, 8.12)', () => {
     c.post('/users', { name: 'Test', username: uniq('u'), roleId: roles['Kassir'], password: 'Parol-12345', ...extra }, { idem: false });
 
   describe('yaratish va tahrirlash', () => {
-    it('rol shablonidan huquqlar, mustChangePassword=true, filial = so\'rovdagi', async () => {
+    it('rol shablonidan huquqlar, mustChangePassword=false, filial = so\'rovdagi', async () => {
       const r = await newUser(s.admin, { branchIds: [s.mainId] });
       expect(r.status).toBe(201);
-      expect(r.body).toMatchObject({ role: 'Kassir', permissions: ['view_pos', 'view_debts', 'give_debt'], mustChangePassword: true, active: true, branchIds: [s.mainId], defaultBranchId: s.mainId });
+      expect(r.body).toMatchObject({ role: 'Kassir', permissions: ['view_pos', 'view_debts', 'give_debt'], mustChangePassword: false, active: true, branchIds: [s.mainId], defaultBranchId: s.mainId });
       expect(r.body).not.toHaveProperty('passwordHash');
     });
     it('login formati, parol siyosati, takror login/email → 409', async () => {

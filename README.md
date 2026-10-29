@@ -1,4 +1,4 @@
-# Temir Baza ERP/POS — Backend
+# Ombor Control ERP/POS — Backend
 
 NestJS 12 · TypeScript · PostgreSQL 16 · Drizzle ORM · Redis. TZ: [`docs/tz/`](docs/tz/00-README.md).
 

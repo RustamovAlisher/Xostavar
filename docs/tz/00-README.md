@@ -1,4 +1,4 @@
-# Temir Baza ERP/POS — Backend TZ (qismlarga bo'lingan)
+# Ombor Control ERP/POS — Backend TZ (qismlarga bo'lingan)
 
 Bu papka `frontend/docs/BACKEND_TZ.md` (v1.3) ning mavzular bo'yicha bo'lingan nusxasi. Har bir fayl bitta modulni to'liq qamraydi: jadvallar, biznes qoidalari va API. Backendni modulma-modul qurishda kerakli faylni olib ishlaysiz, butun TZ ni har safar o'qish shart emas.
 

@@ -25,7 +25,7 @@ async function bootstrap() {
   const doc = SwaggerModule.createDocument(
     app,
     new DocumentBuilder()
-      .setTitle('Temir Baza ERP/POS API')
+      .setTitle('Ombor Control ERP/POS API')
       .setDescription("Ichki hisob tizimi: ombor, sotuv, nasiya, xarajatlar. Filialga tegishli endpointlar `X-Branch-Id` sarlavhasini oladi.")
       .setVersion('1.0')
       .addBearerAuth()

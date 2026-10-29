@@ -1,6 +1,6 @@
 /** Standart lug'atlar — frontend `src/data.ts` `defaultSettings` bilan bir xil (TZ 15). */
 export const DEFAULT_SETTINGS = {
-  store: { name: 'TEMIR BAZA ERP', subtitle: 'Metal & Qurilish Materiallar Ombori', address: '', phone: '', taxId: '', receiptFooter: 'Xarid va hamkorlik uchun rahmat!', printFormat: 'thermal' as const, paperWidthMm: 80 },
+  store: { name: 'OMBOR CONTROL', subtitle: 'Metal & Qurilish Materiallar Ombori', address: '', phone: '', taxId: '', receiptFooter: 'Xarid va hamkorlik uchun rahmat!', printFormat: 'thermal' as const, paperWidthMm: 80 },
   rules: {
     pieceLengthMeters: 11.7, defaultCutLengthMeters: 6, cutDeductionMode: 'net' as const, defaultMinStock: 0, defaultCreditDays: 30,
     defaultCreditLimit: 5_000_000, vatPct: 12, estimatedMarginPct: 16, quickDownPaymentPcts: [25, 50], allowNegativeStock: false, requireShift: true, cashierMaxDiscount: 0,

@@ -71,6 +71,7 @@ export class PaymentMethodDto {
   @IsString() @MinLength(1) @MaxLength(60) label: string;
   @IsIn(['cash', 'card', 'transfer', 'other', 'debt']) kind: 'cash' | 'card' | 'transfer' | 'other' | 'debt';
   @IsBoolean() enabled: boolean;
+  @IsOptional() @IsString() @MaxLength(40) icon?: string | null;
 }
 
 export class ExpenseCategoryDto extends NamedDto {

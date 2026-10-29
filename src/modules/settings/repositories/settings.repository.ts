@@ -141,7 +141,7 @@ export class SettingsRepository {
     return tx.delete(paymentMethods).where(eq(paymentMethods.id, id));
   }
 
-  updatePaymentMethod(tx: DbOrTx, id: string, v: Pick<PaymentMethodValues, 'label' | 'kind' | 'enabled' | 'sortOrder'>) {
+  updatePaymentMethod(tx: DbOrTx, id: string, v: Pick<PaymentMethodValues, 'label' | 'kind' | 'enabled' | 'sortOrder' | 'icon'>) {
     return tx.update(paymentMethods).set({ ...v, version: sql`${paymentMethods.version} + 1` }).where(eq(paymentMethods.id, id));
   }
 

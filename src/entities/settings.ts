@@ -104,6 +104,8 @@ export const paymentMethods = pgTable(
     code: text('code').notNull(),
     label: text('label').notNull(),
     kind: text('kind', { enum: ['cash', 'card', 'transfer', 'other', 'debt'] }).notNull(),
+    /** Kassada ko'rinadigan belgi kaliti (frontend ro'yxatidan, masalan 'smartphone'); bo'sh = turga qarab standart. */
+    icon: text('icon'),
     enabled: boolean('enabled').notNull().default(true),
     system: boolean('system').notNull().default(false),
     sortOrder: integer('sort_order').notNull().default(0),

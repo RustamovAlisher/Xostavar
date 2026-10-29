@@ -36,11 +36,6 @@ export class AuthGuard implements CanActivate {
     req.user = user;
     req.sessionId = payload.sid;
 
-    // Vaqtinchalik parol bilan faqat parolni almashtirish va chiqish mumkin
-    if (user.mustChangePassword && !req.path.startsWith('/api/v1/auth/')) {
-      throw forbidden('Avval parolingizni almashtiring (POST /auth/change-password)');
-    }
-
     const meta = this.reflector.getAllAndOverride<{ perms: Permission[]; all: boolean } | undefined>(PERMS_KEY, targets);
     if (meta?.perms.length) {
       const ok = meta.all ? meta.perms.every((p) => user.permissions.includes(p)) : meta.perms.some((p) => user.permissions.includes(p));

@@ -1,7 +1,7 @@
 {
   "name": "xostavar-backend",
   "version": "0.0.1",
-  "description": "Temir Baza ERP/POS backend (NestJS + PostgreSQL + Drizzle)",
+  "description": "Ombor Control ERP/POS backend (NestJS + PostgreSQL + Drizzle)",
   "author": "",
   "private": true,
   "license": "UNLICENSED",

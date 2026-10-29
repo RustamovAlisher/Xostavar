@@ -135,7 +135,7 @@ export class UsersService {
     const hash = await AuthService.hash(dto.password);
 
     const view = await runTx(this.db, async (tx) => {
-      const u = await this.repo.insert(tx, { name: dto.name.trim(), username: dto.username.trim().toLowerCase(), email, phone: dto.phone?.trim() || null, roleId: role.id, permissions, passwordHash: hash, mustChangePassword: true, active: dto.active ?? true });
+      const u = await this.repo.insert(tx, { name: dto.name.trim(), username: dto.username.trim().toLowerCase(), email, phone: dto.phone?.trim() || null, roleId: role.id, permissions, passwordHash: hash, active: dto.active ?? true });
       await this.setBranchesTx(tx, u.id, branchIds, dto.defaultBranchId);
       await this.audit.log(actor, { action: 'add', module: 'Xodimlar', targetId: u.id, targetName: u.name, details: `Yangi xodim (${role.name})` }, tx);
       return u.id;
@@ -169,7 +169,7 @@ export class UsersService {
       await this.repo.update(id, {
         name: dto.name?.trim() ?? old.name, username, email, phone: dto.phone !== undefined ? dto.phone.trim() || null : old.phone,
         roleId: role.id, permissions, active, version: old.version + 1,
-        ...(hash ? { passwordHash: hash, mustChangePassword: !isSelf } : {}),
+        ...(hash ? { passwordHash: hash } : {}),
       }, tx);
       // Filiallar: filial admini o'zgartira olmaydi (majburan o'z filiali); egasi — so'rovdagi ro'yxat
       if (!scope && (dto.branchIds || role.allBranches !== old.allBranches)) {
@@ -237,7 +237,7 @@ export class UsersService {
     const old = await this.getRaw(id);
     this.assertInScope(actor, old);
     AuthService.checkPolicy(dto.password);
-    await this.repo.update(id, { passwordHash: await AuthService.hash(dto.password), mustChangePassword: id !== actor.id });
+    await this.repo.update(id, { passwordHash: await AuthService.hash(dto.password) });
     await this.auth.revokeUserSessions([id]);
     await this.audit.log(actor, { action: 'password_reset', module: 'Xodimlar', targetId: id, targetName: old.name, details: 'Parol tiklandi (vaqtinchalik)' });
   }

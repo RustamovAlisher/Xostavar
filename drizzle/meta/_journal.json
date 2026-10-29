@@ -29,6 +29,20 @@
       "when": 1792868393281,
       "tag": "0003_search_indexes",
       "breakpoints": true
+    },
+    {
+      "idx": 4,
+      "version": "7",
+      "when": 1793307908779,
+      "tag": "0004_payment_method_icon",
+      "breakpoints": true
+    },
+    {
+      "idx": 5,
+      "version": "7",
+      "when": 1793309289225,
+      "tag": "0005_rename_brand",
+      "breakpoints": true
     }
   ]
 }

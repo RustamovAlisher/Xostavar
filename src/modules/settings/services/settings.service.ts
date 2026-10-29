@@ -146,10 +146,10 @@ export class SettingsService {
         // Tizim usuli va ishlatilgan (chek yoki xarajat) usulning turi o'zgarmaydi — Z-hisobot naqd hisobi buzilmasin
         let kind = m.kind;
         if (old.kind !== m.kind && (old.system || (await this.repo.paymentMethodUsedInSales(tx, old.id)) || (await this.repo.paymentMethodUsedInExpenses(tx, old.id)))) kind = old.kind;
-        await this.repo.updatePaymentMethod(tx, old.id, { label: m.label.trim(), kind, enabled: m.enabled, sortOrder: i });
+        await this.repo.updatePaymentMethod(tx, old.id, { label: m.label.trim(), kind, enabled: m.enabled, sortOrder: i, icon: m.icon || null });
       } else {
         if (m.kind === 'debt') throw unprocessable('validation_failed', "Nasiya turi faqat tizim usulida bo'ladi");
-        await this.repo.insertPaymentMethod(tx, { code: `pm_${Date.now().toString(36)}${i}`, label: m.label.trim(), kind: m.kind, enabled: m.enabled, system: false, sortOrder: i });
+        await this.repo.insertPaymentMethod(tx, { code: `pm_${Date.now().toString(36)}${i}`, label: m.label.trim(), kind: m.kind, enabled: m.enabled, system: false, sortOrder: i, icon: m.icon || null });
       }
     }
   }

@@ -58,11 +58,11 @@ await db.transaction(async (tx) => {
       const role = roleByName.get(p.role)!;
       const [u] = await tx
         .insert(schema.users)
-        .values({ name: p.name, username: p.username, email: p.email, roleId: role.id, permissions: role.permissions, passwordHash: hash, mustChangePassword: true })
+        .values({ name: p.name, username: p.username, email: p.email, roleId: role.id, permissions: role.permissions, passwordHash: hash })
         .returning({ id: schema.users.id });
       if (!role.allBranches) await tx.insert(schema.userBranches).values({ userId: u.id, branchId: mainId, isDefault: true });
     }
-    console.log(`${people.length} ta foydalanuvchi yaratildi (parol: ${process.env.ADMIN_PASSWORD?.trim() ? 'ADMIN_PASSWORD' : '1234'}, birinchi kirishda almashtiriladi)`);
+    console.log(`${people.length} ta foydalanuvchi yaratildi (parol: ${process.env.ADMIN_PASSWORD?.trim() ? 'ADMIN_PASSWORD' : '1234'})`);
   }
 
   // Namuna mahsulotlar — frontend `mockProducts` bilan bir xil (faqat demo, katalog bo'sh bo'lsa)

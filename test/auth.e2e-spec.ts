@@ -66,7 +66,7 @@ describe('auth (TZ 6)', () => {
     expect(code(r)).toBe('rate_limited');
   });
 
-  describe('majburiy parol almashtirish', () => {
+  describe('vaqtinchalik parol (majburiy almashtirish yo\'q)', () => {
     let token: string;
     let u: string;
     beforeAll(async () => {
@@ -74,14 +74,12 @@ describe('auth (TZ 6)', () => {
       const roleId = (await s.admin.get('/roles')).body.find((r: { name: string }) => r.name === 'Kassir').id;
       const r = await s.admin.post('/users', { name: 'Yangi', username: u, roleId, password: 'Vaqtincha-1' }, { idem: false });
       expect(r.status).toBe(201);
-      expect(r.body.mustChangePassword).toBe(true);
+      expect(r.body.mustChangePassword).toBe(false);
       token = (await login(app, u, 'Vaqtincha-1')).token;
     });
-    it('vaqtinchalik parol bilan boshqa endpointlar 403, auth endpointlar ochiq', async () => {
+    it('parolni almashtirmasdan ham barcha endpointlar ochiq', async () => {
       const c = client(app, token);
-      const r = await c.get('/products');
-      expect(r.status).toBe(403);
-      expect(r.body.error.message).toMatch(/parol/i);
+      expect((await c.get('/products')).status).toBe(200);
       expect((await c.get('/auth/me')).status).toBe(200);
     });
     it('parol siyosati: 8 dan qisqa va oddiy parollar rad etiladi; joriy parol noto\'g\'ri → 422', async () => {
