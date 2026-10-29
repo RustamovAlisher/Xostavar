@@ -27,7 +27,8 @@ Kodni yangilang (git pull yoki rsync), so'ng `SKIP_PULL=1 ./deploy.sh`
 (yangilashdan oldin avtomatik zaxira olinadi, migratsiyalar ishga tushganda qo'llanadi).
 
 ## Zaxira va tiklash
-- `backup` xizmati har 24 soatda `deploy/backups/*.dump` ga yozadi, `BACKUP_KEEP_DAYS` kundan eskisini o'chiradi.
+- `backup` xizmati har kuni `BACKUP_TIMES` soatlarida (standart 14:00 va 22:00, Toshkent) `deploy/backups/*.dump` ga yozadi, `BACKUP_KEEP_DAYS` kundan eskisini o'chiradi.
+- Server tashqarisiga nusxa: lokal kompyuterda `deploy/pull-backups.sh` (rsync bilan `~/xostavar-zaxira/` ga tortadi).
 - Tiklash: `./restore.sh backups/<fayl>.dump`.
 - Zaxirani server tashqarisiga ham nusxalang (`rsync`/`scp`) — bitta diskka ishonmang.
 

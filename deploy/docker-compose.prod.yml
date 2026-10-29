@@ -61,7 +61,7 @@ services:
     ports:
       - '127.0.0.1:${HTTP_PORT:-8083}:80'
 
-  # Kunlik pg_dump: ./backups ichiga, BACKUP_KEEP_DAYS kundan eskisi o'chiriladi (standart 14)
+  # Zaxira: har kuni BACKUP_TIMES soatlarida (Toshkent vaqti) pg_dump → ./backups, BACKUP_KEEP_DAYS kundan eskisi o'chiriladi
   backup:
     image: postgres:16-alpine
     restart: unless-stopped
@@ -70,6 +70,7 @@ services:
       DB_NAME: ${DB_NAME:-xostavar}
       DB_USER: ${DB_USER:-xostavar}
       KEEP_DAYS: ${BACKUP_KEEP_DAYS:-14}
+      BACKUP_TIMES: ${BACKUP_TIMES:-14:00 22:00}
       TZ: Asia/Tashkent
     volumes:
       - ./backups:/backups
@@ -79,12 +80,20 @@ services:
     entrypoint: ['sh', '-c']
     command:
       - |
+        echo "zaxira vaqtlari: $$BACKUP_TIMES (Asia/Tashkent)"
+        last=""
         while true; do
-          until pg_isready -h postgres -U "$$DB_USER" -q; do echo "postgres kutilmoqda"; sleep 5; done
-          f=/backups/xostavar-$(date +%Y%m%d-%H%M).dump
-          if pg_dump -h postgres -U "$$DB_USER" -d "$$DB_NAME" -Fc -f "$$f"; then echo "zaxira: $$f"; else echo "zaxira XATO"; rm -f "$$f"; fi
-          find /backups -name 'xostavar-*.dump' -mtime +"$$KEEP_DAYS" -delete
-          sleep 86400
+          now=$$(date +%H:%M); today=$$(date +%Y%m%d)
+          for t in $$BACKUP_TIMES; do
+            if [ "$$now" = "$$t" ] && [ "$$last" != "$$today-$$t" ]; then
+              last="$$today-$$t"
+              until pg_isready -h postgres -U "$$DB_USER" -q; do echo "postgres kutilmoqda"; sleep 5; done
+              f=/backups/xostavar-$$(date +%Y%m%d-%H%M).dump
+              if pg_dump -h postgres -U "$$DB_USER" -d "$$DB_NAME" -Fc -f "$$f"; then echo "zaxira: $$f ($$(du -h "$$f" | cut -f1))"; else echo "zaxira XATO"; rm -f "$$f"; fi
+              find /backups -name 'xostavar-*.dump' -mtime +"$$KEEP_DAYS" -delete
+            fi
+          done
+          sleep 20
         done
 
 volumes:
