@@ -10,3 +10,10 @@ coverage
 .vscode/*
 !.vscode/extensions.json
 *.tsbuildinfo
+
+# Ishlab chiqarish muhiti namunasi repoda qoladi
+!deploy/.env.prod.example
+
+# Baza dumplari (shaxsiy ma'lumot)
+xostavar_dump.sql*
+deploy/backups/

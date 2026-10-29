@@ -43,7 +43,9 @@ await db.transaction(async (tx) => {
 
   const [{ n }] = await tx.select({ n: sql<number>`count(*)::int` }).from(schema.users);
   if (n === 0) {
-    const hash = await argon2.hash('1234', { type: argon2.argon2id });
+    // Ishlab chiqarishda birinchi administrator paroli ADMIN_PASSWORD dan (bo'lmasa 1234) — birinchi kirishda almashtirish majburiy
+    const initial = process.env.ADMIN_PASSWORD?.trim() || '1234';
+    const hash = await argon2.hash(initial, { type: argon2.argon2id });
     const people = demo
       ? [
           { name: 'Alisher Navoiy', username: 'admin', email: 'admin@temirbaza.uz', role: 'Super Admin' },
@@ -60,7 +62,7 @@ await db.transaction(async (tx) => {
         .returning({ id: schema.users.id });
       if (!role.allBranches) await tx.insert(schema.userBranches).values({ userId: u.id, branchId: mainId, isDefault: true });
     }
-    console.log(`${people.length} ta foydalanuvchi yaratildi (parol: 1234, birinchi kirishda almashtiriladi)`);
+    console.log(`${people.length} ta foydalanuvchi yaratildi (parol: ${process.env.ADMIN_PASSWORD?.trim() ? 'ADMIN_PASSWORD' : '1234'}, birinchi kirishda almashtiriladi)`);
   }
 
   // Namuna mahsulotlar — frontend `mockProducts` bilan bir xil (faqat demo, katalog bo'sh bo'lsa)
