@@ -13,7 +13,7 @@ describe('settings (TZ 7.2, 9.3)', () => {
 
   it('GET: barcha lug\'atlar bir javobda, seed qiymatlari', async () => {
     const d = await bundle();
-    expect(d.store.name).toBe('TEMIR BAZA ERP');
+    expect(d.store.name).toBe('OMBOR CONTROL');
     expect(d.rules).toMatchObject({ vatPct: 12, requireShift: true, cashierMaxDiscount: 0, defaultCreditDays: 30 });
     expect(d.units.map((u: { id: string }) => u.id)).toContain('meter');
     expect(d.categories.length).toBe(8);
@@ -137,7 +137,7 @@ describe('settings (TZ 7.2, 9.3)', () => {
     await s.admin.put('/settings', { ...d, store: { ...d.store, name: 'Boshqa nom' }, rules: { ...d.rules, vatPct: 15 } });
     const r = await s.admin.post('/settings/reset', {}, { idem: false });
     expect(r.status).toBe(201);
-    expect(r.body.store.name).toBe('TEMIR BAZA ERP');
+    expect(r.body.store.name).toBe('OMBOR CONTROL');
     expect(r.body.rules.vatPct).toBe(12);
     expect(r.body.paymentMethods.find((m: { code: string }) => m.code === 'cash').enabled).toBe(true);
     expect(r.body.paymentMethods.some((m: { label: string }) => m.label === 'Click')).toBe(true); // maxsus usul saqlandi

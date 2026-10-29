@@ -51,14 +51,14 @@ describe('users & roles (TZ 3, 7.1, 8.12)', () => {
       expect(stale.status).toBe(409);
       expect(code(stale)).toBe('version_conflict');
     });
-    it('admin parol bersa xodim keyingi kirishda almashtiradi va eski sessiyalari bekor bo\'ladi', async () => {
+    it('admin parol bersa xodim yangi parol bilan darhol ishlaydi va eski sessiyalari bekor bo\'ladi', async () => {
       const u = (await newUser(s.admin)).body;
       const c = await as(app, u.username, 'Parol-12345');
       await c.post('/auth/change-password', { currentPassword: 'Parol-12345', newPassword: 'Yangi-Parol-1' }, { idem: false });
       const r = await s.admin.post(`/users/${u.id}/reset-password`, { password: 'Tiklangan-99' }, { idem: false });
       expect(r.status).toBe(204);
       const again = await as(app, u.username, 'Tiklangan-99');
-      expect((await again.get('/products')).status).toBe(403); // must change password
+      expect((await again.get('/products')).status).toBe(200); // majburiy parol almashtirish yo'q
       expect((await c.get('/auth/me')).status).toBe(401); // eski sessiya bekor
     });
   });
