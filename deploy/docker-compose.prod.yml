@@ -80,8 +80,9 @@ services:
     command:
       - |
         while true; do
+          until pg_isready -h postgres -U "$$DB_USER" -q; do echo "postgres kutilmoqda"; sleep 5; done
           f=/backups/xostavar-$(date +%Y%m%d-%H%M).dump
-          if pg_dump -h postgres -U "$$DB_USER" -d "$$DB_NAME" -Fc -f "$$f"; then echo "zaxira: $$f"; else echo "zaxira XATO"; fi
+          if pg_dump -h postgres -U "$$DB_USER" -d "$$DB_NAME" -Fc -f "$$f"; then echo "zaxira: $$f"; else echo "zaxira XATO"; rm -f "$$f"; fi
           find /backups -name 'xostavar-*.dump' -mtime +"$$KEEP_DAYS" -delete
           sleep 86400
         done
