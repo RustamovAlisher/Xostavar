@@ -4,9 +4,12 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
-[ -f .env.prod ] || { echo "deploy/.env.prod yo'q — .env.prod.example dan nusxa olib to'ldiring"; exit 1; }
+# Standart: production (.env.prod, loyiha xostavar). Demo: ENV_FILE=.env.demo PROJECT=xostavar-demo SERVICES="postgres redis backend frontend"
+ENV_FILE="${ENV_FILE:-.env.prod}"; PROJECT="${PROJECT:-xostavar}"; SERVICES="${SERVICES:-}"
+export ENV_FILE
+[ -f "$ENV_FILE" ] || { echo "deploy/$ENV_FILE yo'q — .env.prod.example dan nusxa olib to'ldiring"; exit 1; }
 
-FILES=(-f docker-compose.prod.yml)
+FILES=(-p "$PROJECT" --env-file "$ENV_FILE" -f docker-compose.prod.yml)
 
 echo "== Kod yangilanmoqda"
 # SKIP_PULL=1 — kod rsync bilan yuborilgan bo'lsa (git ishlatilmaydi)
@@ -18,19 +21,19 @@ fi
 
 echo "== Zaxira (yangilashdan oldin)"
 mkdir -p backups
-if docker compose --env-file .env.prod "${FILES[@]}" ps --status running postgres >/dev/null 2>&1; then
-  docker compose --env-file .env.prod "${FILES[@]}" exec -T postgres sh -c 'pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Fc' > "backups/xostavar-pre-deploy-$(date +%Y%m%d-%H%M).dump" || echo "zaxira olinmadi (birinchi ishga tushirish bo'lsa normal)"
+if docker compose "${FILES[@]}" ps --status running postgres >/dev/null 2>&1; then
+  docker compose "${FILES[@]}" exec -T postgres sh -c 'pg_dump -U "$POSTGRES_USER" -d "$POSTGRES_DB" -Fc' > "backups/$PROJECT-pre-deploy-$(date +%Y%m%d-%H%M).dump" || echo "zaxira olinmadi (birinchi ishga tushirish bo'lsa normal)"
 fi
 
 echo "== Qurish va ishga tushirish"
-docker compose --env-file .env.prod "${FILES[@]}" build --pull
-docker compose --env-file .env.prod "${FILES[@]}" up -d --remove-orphans
+docker compose "${FILES[@]}" build --pull $SERVICES
+docker compose "${FILES[@]}" up -d --remove-orphans $SERVICES
 
 echo "== Backend sog'ligi kutilmoqda"
 for i in $(seq 1 30); do
-  if docker compose --env-file .env.prod "${FILES[@]}" exec -T backend curl -fsS http://localhost:3000/health >/dev/null 2>&1; then echo "backend tayyor"; break; fi
+  if docker compose "${FILES[@]}" exec -T backend curl -fsS http://localhost:3000/health >/dev/null 2>&1; then echo "backend tayyor"; break; fi
   sleep 2
-  [ "$i" = 30 ] && { echo "backend 60 s da ko'tarilmadi — loglar:"; docker compose --env-file .env.prod "${FILES[@]}" logs --tail=50 backend; exit 1; }
+  [ "$i" = 30 ] && { echo "backend 60 s da ko'tarilmadi — loglar:"; docker compose "${FILES[@]}" logs --tail=50 backend; exit 1; }
 done
 
-docker compose --env-file .env.prod "${FILES[@]}" ps
+docker compose "${FILES[@]}" ps

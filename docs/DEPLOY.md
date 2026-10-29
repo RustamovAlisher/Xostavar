@@ -40,3 +40,14 @@ docker compose --env-file .env.prod -f docker-compose.prod.yml ps
 docker compose --env-file .env.prod -f docker-compose.prod.yml logs -f backend
 ```
 `down -v` ni ISHLATMANG — bazani o'chiradi.
+
+## Demo (staging) muhit
+Production bilan bir xil kod, lekin alohida papka, baza, port va domen: `https://demo.ombor-control.uz`.
+```
+~/xostavar-demo/backend, ~/xostavar-demo/frontend   # kod nusxasi
+~/xostavar-demo/backend/deploy/.env.demo            # HTTP_PORT=8701, NODE_ENV=staging, SEED_DEMO=true
+```
+- Ko'tarish/yangilash: `cd ~/xostavar-demo/backend/deploy && ./demo.sh update`
+- Demo bazani qayta seed qilish: `./demo.sh reset` (admin / 1234, demo ma'lumot)
+- Nginx + sertifikat (bir marta, sudo): `sudo bash nginx-setup.sh demo.ombor-control.uz 8701 ombor-control-demo`
+- Compose loyiha nomi `xostavar-demo`, production `xostavar` ga tegmaydi. Zaxira xizmati demo'da ishlamaydi.

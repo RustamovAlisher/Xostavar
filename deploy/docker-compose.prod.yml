@@ -34,13 +34,13 @@ services:
       context: ..
       dockerfile: Dockerfile
     restart: unless-stopped
-    env_file: .env.prod
+    env_file: ${ENV_FILE:-.env.prod}
     environment:
-      NODE_ENV: production
+      NODE_ENV: ${NODE_ENV:-production}
       PORT: '3000'
       DATABASE_URL: postgres://${DB_USER:-xostavar}:${DB_PASSWORD}@postgres:5432/${DB_NAME:-xostavar}
       REDIS_URL: redis://redis:6379
-      SEED_DEMO: 'false'
+      SEED_DEMO: ${SEED_DEMO:-false}
     depends_on:
       postgres:
         condition: service_healthy
