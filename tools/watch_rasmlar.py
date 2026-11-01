@@ -8,16 +8,17 @@ chiqarilgan rasmlarni MAHSULOT-KIRITISH.md bo'yicha kiritadi, so'ng skriptni qay
 Papkada boshidanoq kiritilmagan rasm bo'lsa, darhol ularni chiqaradi (`qoshilgan/` papkasi hisobga olinmaydi).
 Chiqish: har qatorda bitta rasm yo'li; hech narsa topilmasa chiqmaydi, kutaveradi.
 """
-import os, sys, time
+import os, re, sys, time
 
 EXT = {'.jpg', '.jpeg', '.png', '.webp'}
+DONE = re.compile(r'^[A-Z0-9-]+__')  # `done` bilan belgilangan (SKU__nom.jpg) — allaqachon kiritilgan, e'tiborsiz
 
 
 def images(folder):
     out = {}
     for n in os.listdir(folder):
         p = os.path.join(folder, n)
-        if os.path.isfile(p) and os.path.splitext(n)[1].lower() in EXT:
+        if os.path.isfile(p) and os.path.splitext(n)[1].lower() in EXT and not DONE.match(n):
             out[p] = os.path.getsize(p)
     return out
 
