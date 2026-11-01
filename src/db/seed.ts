@@ -5,6 +5,7 @@ import { drizzle } from 'drizzle-orm/node-postgres';
 import pg from 'pg';
 import * as schema from '../entities/index.js';
 import { DEFAULT_ROLES, DEFAULT_SETTINGS } from '../modules/settings/constants/settings.defaults.js';
+import { DEMO_PRODUCTS } from './demo-products.js';
 
 /**
  * `npm run db:seed` — lug'atlar, standart rollar, bitta `main` filial (TZ 15).
@@ -21,14 +22,14 @@ await db.transaction(async (tx) => {
   await tx.insert(schema.businessRules).values({ id: 1, ...D.rules }).onConflictDoNothing();
   await tx.insert(schema.units).values(D.units.map((u, i) => ({ ...u, sortOrder: i }))).onConflictDoNothing();
 
-  const cats = await tx.insert(schema.categories).values(D.categories.map((c, i) => ({ ...c, sortOrder: i }))).onConflictDoNothing().returning();
-  const allCats = cats.length ? cats : await tx.select().from(schema.categories);
+  // Qo'shimcha rejim: mavjud bazaga yetishmayotgan kategoriya va o'lcham andozalari qo'shiladi, borlari o'zgarmaydi
+  await tx.insert(schema.categories).values(D.categories.map((c, i) => ({ ...c, sortOrder: i }))).onConflictDoNothing();
+  const allCats = await tx.select().from(schema.categories);
   const catByName = new Map(allCats.map((c) => [c.name, c.id]));
-  if (cats.length) {
-    await tx.insert(schema.sizePresets).values(
-      D.sizePresets.map((s, i) => ({ categoryId: catByName.get(s.category)!, name: s.name, kgPerMeter: s.kgPerMeter ?? null, sortOrder: i })),
-    );
-  }
+  const presetRows = D.sizePresets
+    .filter((s) => catByName.has(s.category))
+    .map((s, i) => ({ categoryId: catByName.get(s.category)!, name: s.name, kgPerMeter: s.kgPerMeter ?? null, sortOrder: i }));
+  if (presetRows.length) await tx.insert(schema.sizePresets).values(presetRows).onConflictDoNothing();
   await tx.insert(schema.customerGroups).values(D.customerGroups.map((name, i) => ({ name, sortOrder: i }))).onConflictDoNothing();
   await tx.insert(schema.paymentMethods).values(D.paymentMethods.map((m, i) => ({ ...m, sortOrder: i }))).onConflictDoNothing();
   await tx.insert(schema.suppliers).values(D.suppliers.map((name) => ({ name }))).onConflictDoNothing();
@@ -65,29 +66,15 @@ await db.transaction(async (tx) => {
     console.log(`${people.length} ta foydalanuvchi yaratildi (parol: ${process.env.ADMIN_PASSWORD?.trim() ? 'ADMIN_PASSWORD' : '1234'})`);
   }
 
-  // Namuna mahsulotlar — frontend `mockProducts` bilan bir xil (faqat demo, katalog bo'sh bo'lsa)
+  // Namuna mahsulotlar — real do'kon assortimenti (`demo-products.ts`), faqat demo va katalog bo'sh bo'lsa
   const [{ pn }] = await tx.select({ pn: sql<number>`count(*)::int` }).from(schema.products);
   if (demo && pn === 0) {
-    const cat = (name: string) => catByName.get(name)!;
-    const meterVariant = (name: string, sku: string, kgPerM: number, price: number) => ({ name, sku, retailPrice: price, kg: Math.round((1 / kgPerM) * 10000) / 10000 });
-    const items: {
-      name: string; category: string; sku: string; baseUnit: string; isDivisible: boolean; retailPrice?: number; barcodes?: string[];
-      conversions?: { unit: string; factor: number; price?: number; barcode?: string }[]; variants?: ReturnType<typeof meterVariant>[] | { name: string; sku: string; retailPrice: number }[];
-    }[] = [
-      { name: "Armatura po'lat (A500C / 25G2S)", category: 'Armatura', sku: 'ARM', baseUnit: 'meter', isDivisible: true, conversions: [{ unit: 'piece', factor: 11.7 }],
-        variants: [meterVariant('Ø 10 mm A500C', 'ARM-10-A500C', 0.617, 8800), meterVariant('Ø 12 mm A500C', 'ARM-12-A500C', 0.888, 12500), meterVariant('Ø 16 mm 25G2S', 'ARM-16-25G2S', 1.578, 19800)] },
-      { name: "Profil truba (kvadrat va to'rtburchak)", category: 'Trubalar', sku: 'PT', baseUnit: 'meter', isDivisible: true, conversions: [{ unit: 'piece', factor: 6 }],
-        variants: [meterVariant('40×20×2 mm', 'PT-40x20x2', 1.75, 24000), meterVariant('80×80×3 mm', 'PT-80x80x3', 7.1, 98000), meterVariant('100×100×4 mm', 'PT-100x100x4', 11.5, 162000)] },
-      { name: 'Qurilish mixi', category: "Xo'jalik mollari", sku: 'NAIL', baseUnit: 'kg', isDivisible: true, conversions: [{ unit: 'box', factor: 5 }],
-        variants: [{ name: '70 mm', sku: 'NAIL-70', retailPrice: 24000 }, { name: '100 mm', sku: 'NAIL-100', retailPrice: 22500 }, { name: '120 mm', sku: 'NAIL-120', retailPrice: 23000 }] },
-      { name: 'Tunuka list 2.0 mm 1250×2500', category: 'Listlar', sku: 'TL-2.0-1250', baseUnit: 'piece', isDivisible: false, retailPrice: 925000, barcodes: ['4780012345017'], conversions: [{ unit: 'kg', factor: 0.02 }] },
-      { name: 'Sement Qizilqum M500', category: 'Sement va aralashmalar', sku: 'SEM-M500-50', baseUnit: 'bag', isDivisible: false, retailPrice: 65000, barcodes: ['4780012345024'], conversions: [{ unit: 'kg', factor: 0.02, price: 1400 }] },
-      { name: 'Samorez metall 3.5×35 mm', category: "Xo'jalik mollari", sku: 'SAM-3.5x35', baseUnit: 'piece', isDivisible: false, retailPrice: 35, barcodes: ['4780012345031'], conversions: [{ unit: 'box', factor: 1000, price: 28000, barcode: '4780012345048' }] },
-      { name: 'Balgarka toshi (kesuvchi disk) 125×1.2 mm', category: 'Asbob-uskunalar', sku: 'DISC-125', baseUnit: 'piece', isDivisible: false, retailPrice: 9000, barcodes: ['4780012345055'], conversions: [{ unit: 'box', factor: 25, price: 210000 }] },
-      { name: 'Bolgarka Makita GA5030 (720 W)', category: 'Asbob-uskunalar', sku: 'MAK-GA5030', baseUnit: 'piece', isDivisible: false, retailPrice: 1150000, barcodes: ['088381096560'] },
-      { name: "Emal bo'yoq PF-115 oq", category: "Bo'yoqlar", sku: 'PF115-W', baseUnit: 'liter', isDivisible: true, retailPrice: 38000, conversions: [{ unit: 'can', factor: 2.8, price: 100000 }] },
-      { name: 'Kafel 30×60 kulrang', category: 'Kafel va pol', sku: 'TILE-3060-GR', baseUnit: 'm2', isDivisible: true, retailPrice: 85000, conversions: [{ unit: 'box', factor: 1.44 }] },
-    ];
+    const cat = (name: string) => {
+      const id = catByName.get(name);
+      if (!id) throw new Error(`Seed: kategoriya topilmadi: ${name}`);
+      return id;
+    };
+    const items = DEMO_PRODUCTS;
     for (const it of items) {
       const [p] = await tx
         .insert(schema.products)

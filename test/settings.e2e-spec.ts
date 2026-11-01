@@ -16,8 +16,8 @@ describe('settings (TZ 7.2, 9.3)', () => {
     expect(d.store.name).toBe('OMBOR CONTROL');
     expect(d.rules).toMatchObject({ requireShift: true, cashierMaxDiscount: 0, defaultCreditDays: 30 });
     expect(d.units.map((u: { id: string }) => u.id)).toContain('meter');
-    expect(d.categories.length).toBe(8);
-    expect(d.sizePresets.length).toBe(13);
+    expect(d.categories.length).toBe(16); // settings.defaults: real do'kon kategoriyalari
+    expect(d.sizePresets.length).toBe(90); // GOST andozalari (armatura, truba, shveller, ugolok, ...)
     expect(d.paymentMethods.map((m: { code: string }) => m.code).sort()).toEqual(['card', 'cash', 'debt', 'transfer']);
     expect(d.expenseCategories.length).toBe(8);
     // Kassir ham o'qiy oladi (kassa uchun), lekin yoza olmaydi
