@@ -38,6 +38,7 @@ def main():
         if prev is not None:
             stable = [p for p, s in cur.items() if s > 0 and prev.get(p) == s]
             if stable:
+                time.sleep(interval * 3)  # izoh (.txt) odatda rasmdan bir oz keyin yoziladi — kutib olamiz
                 for p in sorted(stable):
                     print(p, flush=True)
                     # Rasm yonidagi izoh: xuddi shu nomli .txt (variantlar, narxlar, hajm, tannarx qoidasi…)
