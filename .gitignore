@@ -17,3 +17,6 @@ coverage
 # Baza dumplari (shaxsiy ma'lumot)
 xostavar_dump.sql*
 deploy/backups/
+
+# Yuklangan mahsulot rasmlari (serverda volume)
+uploads/

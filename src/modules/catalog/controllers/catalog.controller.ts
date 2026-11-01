@@ -1,8 +1,11 @@
-import { Body, Controller, Delete, Get, HttpCode, Param, ParseUUIDPipe, Post, Put, Query } from '@nestjs/common';
-import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
+import { Body, Controller, Delete, Get, HttpCode, Param, ParseUUIDPipe, Post, Put, Query, UploadedFile, UseInterceptors } from '@nestjs/common';
+import { FileInterceptor } from '@nestjs/platform-express';
+import { ApiBearerAuth, ApiBody, ApiConsumes, ApiTags } from '@nestjs/swagger';
+import { IMAGE_MAX_BYTES } from '../../../common/utils/images.js';
 import { BranchId, BranchScoped, CurrentUser, Perms, Req, type AuthRequest, type AuthUser } from '../../../common/decorators/auth-context.js';
 import { BranchPriceDto, ProductDto, ProductListQuery } from '../dto/catalog.dto.js';
 import { CatalogService } from '../services/catalog.service.js';
+import { ProductImageService, type UploadedImage } from '../services/product-image.service.js';
 import { InventoryService } from '../../inventory/services/inventory.service.js';
 
 /**
@@ -16,6 +19,7 @@ export class CatalogController {
   constructor(
     private readonly catalog: CatalogService,
     private readonly inventory: InventoryService,
+    private readonly images: ProductImageService,
   ) {}
 
   @Get()
@@ -53,6 +57,23 @@ export class CatalogController {
   @Perms('edit_product')
   update(@CurrentUser() u: AuthUser, @Req() req: AuthRequest, @Param('id', ParseUUIDPipe) id: string, @Body() dto: ProductDto) {
     return this.catalog.update(u, req.branchId ?? null, id, dto);
+  }
+
+  /** Mahsulot rasmi: multipart `file` (JPEG/PNG/WebP, ≤8 MB) → 1200px + 320px eskiz; eskisi almashtiriladi. */
+  @Post(':id/image')
+  @Perms('add_product', 'edit_product')
+  @HttpCode(200)
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: IMAGE_MAX_BYTES, files: 1 } }))
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({ schema: { type: 'object', required: ['file'], properties: { file: { type: 'string', format: 'binary' } } } })
+  uploadImage(@CurrentUser() u: AuthUser, @Req() req: AuthRequest, @Param('id', ParseUUIDPipe) id: string, @UploadedFile() file?: UploadedImage) {
+    return this.images.upload(u, req.branchId ?? null, id, file);
+  }
+
+  @Delete(':id/image')
+  @Perms('add_product', 'edit_product')
+  removeImage(@CurrentUser() u: AuthUser, @Req() req: AuthRequest, @Param('id', ParseUUIDPipe) id: string) {
+    return this.images.remove(u, req.branchId ?? null, id);
   }
 
   /** Filial bo'yicha narx (TZ 7.3, 14.4 (2)) — faqat egasi (edit_product). */

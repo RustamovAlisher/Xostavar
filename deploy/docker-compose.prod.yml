@@ -41,6 +41,9 @@ services:
       DATABASE_URL: postgres://${DB_USER:-xostavar}:${DB_PASSWORD}@postgres:5432/${DB_NAME:-xostavar}
       REDIS_URL: redis://redis:6379
       SEED_DEMO: ${SEED_DEMO:-false}
+      UPLOAD_DIR: /app/uploads
+    volumes:
+      - uploads:/app/uploads
     depends_on:
       postgres:
         condition: service_healthy
@@ -98,3 +101,4 @@ services:
 volumes:
   pgdata:
   redisdata:
+  uploads:

@@ -34,6 +34,22 @@ Kodni yangilang (git pull yoki rsync), so'ng `SKIP_PULL=1 ./deploy.sh`
 - Tiklash: `./restore.sh backups/<fayl>.dump`.
 - Zaxirani server tashqarisiga ham nusxalang (`rsync`/`scp`) — bitta diskka ishonmang.
 
+## Mahsulot rasmlari
+- Yuklangan rasmlar `uploads` nomli Docker volume'da (`/app/uploads`), baza bilan birga saqlanadi; `down -v` uni ham o'chiradi.
+- Rasm zaxirasi: `docker run --rm -v xostavar_uploads:/u -v $PWD/backups:/b alpine tar czf /b/uploads-$(date +%F).tgz -C /u .`
+- Hostdagi Nginx `client_max_body_size` kamida 5m bo'lsin (nginx-site.conf.example da 12m); brauzer rasmni ≤1600px ga kichraytirib yuboradi.
+- Do'kon rasmlaridan tayyorlangan `crops/<SKU>.jpg` fayllarini SKU bo'yicha biriktirish:
+  ```
+  docker cp crops xostavar-demo-backend-1:/tmp/crops
+  docker compose -p xostavar-demo --env-file .env.demo -f docker-compose.prod.yml exec -T backend node dist/db/import-images.js --dir /tmp/crops          # quruq rejim
+  docker compose -p xostavar-demo --env-file .env.demo -f docker-compose.prod.yml exec -T backend node dist/db/import-images.js --dir /tmp/crops --apply  # saqlash (--force: borini almashtirish)
+  ```
+
+## Katalogni standartga moslash
+`node dist/db/sync-catalog.js` — birliklar, kategoriyalar, o'lcham andozalari (va `--products` bilan demo mahsulotlar) ni yangi standart bilan moslaydi:
+yetishmayotganini qo'shadi, noto'g'ri koeffitsientni tuzatadi, eski seed namunalarini olib tashlaydi; foydalanuvchi kiritgan mahsulotlar va narxlar saqlanadi.
+Avval `--apply` siz ishga tushiring (hisobot), keyin `--apply`.
+
 ## Foydali buyruqlar
 ```
 docker compose --env-file .env.prod -f docker-compose.prod.yml ps

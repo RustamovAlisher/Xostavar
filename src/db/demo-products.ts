@@ -12,9 +12,9 @@ export interface DemoProduct {
   variants?: DemoVariant[];
 }
 
-const r4 = (x: number) => Math.round(x * 10000) / 10000;
+const r6 = (x: number) => Math.round(x * 1_000_000) / 1_000_000; // ustun 6 xonali — og'ir listlarda 4 xona 0.6% gacha xato beradi
 /** Og'irlikli variant: 1 asosiy birlik = kgPerBase kg; narx asosiy birlik uchun. */
-const kgVar = (name: string, sku: string, kgPerBase: number, price: number): DemoVariant => ({ name, sku, retailPrice: price, kg: r4(1 / kgPerBase) });
+const kgVar = (name: string, sku: string, kgPerBase: number, price: number): DemoVariant => ({ name, sku, retailPrice: price, kg: r6(1 / kgPerBase) });
 const v = (name: string, sku: string, retailPrice: number): DemoVariant => ({ name, sku, retailPrice });
 /** Metr narxi: kg/m × kg narxi, 100 so'mga yaxlitlangan. */
 const perM = (kgPerM: number, kgPrice: number) => Math.round((kgPerM * kgPrice) / 100) * 100;
@@ -81,7 +81,7 @@ export const DEMO_PRODUCTS: DemoProduct[] = [
   { name: 'Qora list 1250×2500', category: 'Listlar', sku: 'LST', baseUnit: 'piece', isDivisible: false,
     variants: [kgVar('1.0 mm', 'LST-1.0', 24.5, 340000), kgVar('1.5 mm', 'LST-1.5', 36.8, 505000), kgVar('2.0 mm', 'LST-2.0', 49.1, 670000), kgVar('3.0 mm', 'LST-3.0', 73.6, 1000000), kgVar('4.0 mm', 'LST-4.0', 98.1, 1330000), kgVar('5.0 mm', 'LST-5.0', 122.7, 1660000)] },
   { name: 'Rifli list 1250×2500', category: 'Listlar', sku: 'RLST', baseUnit: 'piece', isDivisible: false,
-    variants: [kgVar('3 mm', 'RLST-3', 80, 1120000), kgVar('4 mm', 'RLST-4', 105, 1470000)] },
+    variants: [kgVar('3 mm', 'RLST-3', 78.4, 1100000), kgVar('4 mm', 'RLST-4', 102.9, 1440000)] },
   { name: 'Rux qoplangan list 1250×2500', category: 'Listlar', sku: 'ZLST', baseUnit: 'piece', isDivisible: false,
     variants: [kgVar('0.5 mm', 'ZLST-0.5', 12.9, 230000), kgVar('0.7 mm', 'ZLST-0.7', 17.8, 310000)] },
   { name: 'Profnastil S8 rux 1200×2000 (0.4 mm)', category: 'Listlar', sku: 'PRF-S8', baseUnit: 'piece', isDivisible: false, retailPrice: 95000, conversions: [{ unit: 'm2', factor: 0.4167, price: 40000 }] },
@@ -283,4 +283,43 @@ export const DEMO_PRODUCTS: DemoProduct[] = [
     variants: [v('Dumaloq Ø700 (T)', 'LYUK-R700', 450000), v('To\'rtburchak 600×600', 'LYUK-S600', 380000)] },
   { name: 'Beton halqa KS 10-9', category: 'Boshqa qurilish mollari', sku: 'BHAL-10-9', baseUnit: 'piece', isDivisible: false, retailPrice: 350000 },
   { name: 'Plastik chelak 12 l', category: 'Boshqa qurilish mollari', sku: 'CHLK-12', baseUnit: 'piece', isDivisible: false, retailPrice: 18000 },
+
+  // ───────── Do'kon rasmlaridan aniqlangan qo'shimcha mahsulotlar (2026-11) ─────────
+  { name: 'Kovka akant bargi', category: 'Kovka elementlari', sku: 'KV-BARG', baseUnit: 'piece', isDivisible: false,
+    variants: [v('Kichik (8×5)', 'KV-BARG-S', 6000), v('O\'rta (12×7)', 'KV-BARG-M', 9000), v('Katta (18×10)', 'KV-BARG-L', 14000)] },
+  { name: 'Kovka burchak paneli (uchburchak naqsh)', category: 'Kovka elementlari', sku: 'KV-BURCHAK', baseUnit: 'piece', isDivisible: false, retailPrice: 45000 },
+  { name: 'Kovka rozetka (halqa ichida naqsh)', category: 'Kovka elementlari', sku: 'KV-ROZ', baseUnit: 'piece', isDivisible: false,
+    variants: [v('Ø 20 sm', 'KV-ROZ-20', 25000), v('Ø 30 sm', 'KV-ROZ-30', 38000)] },
+  { name: 'Shtaketnik nayza uchli (qora, payvand)', category: 'Setka va panjara', sku: 'SHTAK', baseUnit: 'piece', isDivisible: false,
+    variants: [v('1.2 m', 'SHTAK-120', 22000), v('1.5 m', 'SHTAK-150', 27000), v('2.0 m', 'SHTAK-200', 35000)] },
+  { name: 'Lyuk ramkasi cho\'yan', category: 'Boshqa qurilish mollari', sku: 'LYUK-RAMKA', baseUnit: 'piece', isDivisible: false, retailPrice: 320000 },
+  { name: 'Beton lyuk qopqog\'i (kichik, dumaloq)', category: 'Boshqa qurilish mollari', sku: 'BLYUK', baseUnit: 'piece', isDivisible: false, retailPrice: 120000 },
+  { name: 'Payvand petlya (garaj ilmog\'i)', category: 'Xo\'jalik mollari', sku: 'PETLYA', baseUnit: 'piece', isDivisible: false, conversions: [{ unit: 'pair', factor: 2 }],
+    variants: [v('Ø 20 mm', 'PETLYA-20', 12000), v('Ø 25 mm', 'PETLYA-25', 16000), v('Ø 32 mm', 'PETLYA-32', 24000)] },
+  { name: 'Eshik qulfi LIT (dasta bilan)', category: 'Xo\'jalik mollari', sku: 'ZAMOK-LIT', baseUnit: 'piece', isDivisible: false, retailPrice: 95000 },
+  { name: 'Krovelniy samorez (olti qirrali, shaybali)', category: 'Xo\'jalik mollari', sku: 'SAMK', baseUnit: 'piece', isDivisible: false, conversions: [{ unit: 'pack', factor: 250 }, { unit: 'kg', factor: 160 }],
+    variants: [v('4.8×35 mm', 'SAMK-4.8x35', 300), v('4.8×51 mm', 'SAMK-4.8x51', 400), v('4.8×70 mm', 'SAMK-4.8x70', 550)] },
+  { name: 'Po\'lat zanjir', category: 'Xo\'jalik mollari', sku: 'ZANJ', baseUnit: 'meter', isDivisible: true,
+    variants: [v('Ø 4 mm', 'ZANJ-4', 9000), v('Ø 6 mm', 'ZANJ-6', 16000), v('Ø 8 mm', 'ZANJ-8', 26000)] },
+  { name: 'Tekstil strop (yuk tasmasi)', category: 'Xo\'jalik mollari', sku: 'STROP', baseUnit: 'piece', isDivisible: false,
+    variants: [v('1 t × 2 m', 'STROP-1-2', 45000), v('2 t × 3 m', 'STROP-2-3', 85000), v('3 t × 4 m', 'STROP-3-4', 140000)] },
+  { name: 'Tarqatish qutisi (raspredkorobka)', category: 'Elektr tovarlar', sku: 'RKOR', baseUnit: 'piece', isDivisible: false,
+    variants: [v('80×80 mm', 'RKOR-80', 6000), v('100×100 mm', 'RKOR-100', 9000)] },
+  { name: 'Patron E27 keramika', category: 'Elektr tovarlar', sku: 'PTRN-E27', baseUnit: 'piece', isDivisible: false, retailPrice: 7000 },
+  { name: 'LED svetilnik nakladnoy (Techno LED)', category: 'Elektr tovarlar', sku: 'LSVT', baseUnit: 'piece', isDivisible: false,
+    variants: [v('18 W', 'LSVT-18', 45000), v('24 W', 'LSVT-24', 58000), v('36 W', 'LSVT-36', 85000)] },
+  { name: 'LED lineyniy svetilnik Beltims', category: 'Elektr tovarlar', sku: 'LLIN', baseUnit: 'piece', isDivisible: false,
+    variants: [v('18 W 60 sm', 'LLIN-18', 55000), v('36 W 120 sm', 'LLIN-36', 85000)] },
+  { name: 'LED lampa avariya (emergency) Lucem 9 W', category: 'Elektr tovarlar', sku: 'LEDE', baseUnit: 'piece', isDivisible: false, retailPrice: 48000 },
+  { name: 'LED panel dumaloq Beltims', category: 'Elektr tovarlar', sku: 'LPANR', baseUnit: 'piece', isDivisible: false,
+    variants: [v('12 W', 'LPANR-12', 32000), v('18 W', 'LPANR-18', 42000), v('24 W', 'LPANR-24', 55000)] },
+  { name: 'LED lampa Dusel 15 W E27', category: 'Elektr tovarlar', sku: 'LEDD', baseUnit: 'piece', isDivisible: false, retailPrice: 15000, conversions: [{ unit: 'box', factor: 50 }] },
+  { name: 'Latun nippel / perexodnik', category: 'Santexnika', sku: 'NIP', baseUnit: 'piece', isDivisible: false,
+    variants: [v('1/2"', 'NIP-15', 9000), v('3/4"', 'NIP-20', 13000), v('1"', 'NIP-25', 20000)] },
+  { name: 'PVX shlang sariq (sug\'orish)', category: 'Santexnika', sku: 'SHLANG', baseUnit: 'meter', isDivisible: true,
+    variants: [v('1/2"', 'SHLANG-12', 7000), v('3/4"', 'SHLANG-34', 9500), v('1"', 'SHLANG-1', 14000)] },
+  { name: 'Projektor akkumulyatorli Makute', category: 'Asbob-uskunalar', sku: 'MK-FL', baseUnit: 'piece', isDivisible: false, retailPrice: 220000 },
+  { name: 'Yog\'och terka (shtukaturka)', category: 'Asbob-uskunalar', sku: 'TERKA', baseUnit: 'piece', isDivisible: false, retailPrice: 25000 },
+  { name: 'Akfix AC605 montaj yelimi', category: 'Bo\'yoqlar', sku: 'AK605', baseUnit: 'piece', isDivisible: false, retailPrice: 38000, conversions: [{ unit: 'box', factor: 12 }] },
+  { name: 'Vero montaj penasi (65 l)', category: 'Bo\'yoqlar', sku: 'VERO-PENA', baseUnit: 'piece', isDivisible: false, retailPrice: 42000, conversions: [{ unit: 'box', factor: 12 }] },
 ];

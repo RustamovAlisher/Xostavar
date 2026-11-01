@@ -26,6 +26,9 @@ export const products = pgTable(
     retailPrice: money('retail_price').notNull().default(0),
     wholesalePrice: money('wholesale_price'),
     isVariable: boolean('is_variable').notNull().default(false),
+    /** Mahsulot rasmi: UPLOAD_DIR ga nisbatan yo'l (`products/<id>-<ts>.jpg`); `thumbPath` — 320px eskiz. */
+    imagePath: text('image_path'),
+    thumbPath: text('thumb_path'),
     deletedAt: deletedAt(),
     version: version(),
     createdAt: createdAt(),

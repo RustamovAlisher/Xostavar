@@ -57,6 +57,13 @@
       "when": 1793492815951,
       "tag": "0007_drop_vat",
       "breakpoints": true
+    },
+    {
+      "idx": 8,
+      "version": "7",
+      "when": 1793503855537,
+      "tag": "0008_product_image",
+      "breakpoints": true
     }
   ]
 }

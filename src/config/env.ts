@@ -20,6 +20,8 @@ const schema = z.object({
     .string()
     .default('true')
     .transform((s) => s === 'true' || s === '1'),
+  /** Yuklangan fayllar (mahsulot rasmlari) papkasi; `/api/v1/uploads/` orqali tarqatiladi. */
+  UPLOAD_DIR: z.string().default('./uploads'),
 });
 
 export type Env = z.infer<typeof schema>;

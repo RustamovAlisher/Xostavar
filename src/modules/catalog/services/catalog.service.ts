@@ -1,4 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
+import { ConfigService } from '@nestjs/config';
+import type { Env } from '../../../config/env.js';
+import { removeProductFiles } from '../../../common/utils/images.js';
 import { DB, type Db, type DbOrTx } from '../../../db/db.module.js';
 import { runTx } from '../../../db/tx.js';
 import type { AuthUser } from '../../../common/decorators/auth-context.js';
@@ -19,7 +22,11 @@ export class CatalogService {
     @Inject(DB) private readonly db: Db,
     private readonly repo: CatalogRepository,
     private readonly audit: AuditService,
-  ) {}
+    config: ConfigService<Env, true>,
+  ) {
+    this.uploadDir = config.get('UPLOAD_DIR', { infer: true });
+  }
+  private readonly uploadDir: string;
 
   /* ───────── O'qish (N+1 siz: 6 ta batch so'rov) ───────── */
 
@@ -212,7 +219,7 @@ export class CatalogService {
 
   /** TZ 8.11: tarixi bor mahsulot yumshoq o'chiriladi; qoldig'i bo'lsa o'chirilmaydi. */
   async remove(user: AuthUser, id: string) {
-    await runTx(this.db, async (tx) => {
+    const files = await runTx(this.db, async (tx) => {
       const p = await this.repo.findByIdForUpdate(tx, id);
       if (!p) throw notFound('Mahsulot');
       const stocked = await this.repo.findStocked(tx, id);
@@ -221,7 +228,9 @@ export class CatalogService {
       if (await this.repo.hasHistory(tx, id)) await this.repo.softDeleteProduct(tx, id);
       else await this.repo.hardDeleteProduct(tx, id); // cascade: variantlar, konversiyalar, kodlar, qoldiq qatorlari
       await this.audit.log(user, { action: 'delete', module: 'Mahsulotlar', targetId: id, targetName: p.name, details: `O'chirildi (SKU: ${p.sku})` }, tx);
+      return [p.imagePath, p.thumbPath];
     });
+    await removeProductFiles(this.uploadDir, files); // rasm fayllari endi kerak emas (tiklash yo'q)
   }
 
   /* ───────── Filial narxi (TZ 7.3) ───────── */

@@ -1,5 +1,6 @@
 import type { BarcodeInsert, BarcodeRow, ConversionInsert, ConversionRow, ProductChildren, ProductRow } from '../repositories/catalog.repository.js';
 import type { ProductDto, VariantDto } from '../dto/catalog.dto.js';
+import { uploadUrl } from '../../../common/utils/images.js';
 
 /** Frontend `Product` bilan bir xil shakl (TZ 9.4, 14.3). */
 export interface ProductView {
@@ -23,6 +24,9 @@ export interface ProductView {
   inBranch: boolean;
   version: number;
   createdAt: Date;
+  /** Mahsulot rasmi (`/api/v1/uploads/...`); yo'q bo'lsa undefined. */
+  imageUrl?: string;
+  thumbUrl?: string;
 }
 export interface VariantView {
   id: string;
@@ -87,6 +91,7 @@ export function toProductViews(rows: ProductRow[], ch: ProductChildren, withCost
       stock: p.isVariable ? vs.reduce((a, v) => a + v.stock, 0) : l ? Number(l.stock) : 0,
       minStock: l?.minStock != null ? Number(l.minStock) : undefined,
       isVariable: p.isVariable, variants: p.isVariable ? vs : undefined, inBranch, version: p.version, createdAt: p.createdAt,
+      imageUrl: uploadUrl(p.imagePath), thumbUrl: uploadUrl(p.thumbPath),
     };
   });
 }

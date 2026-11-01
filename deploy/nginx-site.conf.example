@@ -3,7 +3,7 @@
 server {
     listen 80;
     server_name ombor-control.uz www.ombor-control.uz;
-    client_max_body_size 5m;
+    client_max_body_size 12m;
 
     location / {
         proxy_pass http://127.0.0.1:8700;
