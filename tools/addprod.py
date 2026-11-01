@@ -109,6 +109,10 @@ def upload(pid, src):
         fd, path = tempfile.mkstemp(suffix=ext)
         os.write(fd, data)
         os.close(fd)
+    # Windows'da git-bash ko'rinishidagi yo'l (/c/Users/...) kelsa — C:\Users\... ga aylantiriladi
+    m = re.match(r'^/([a-zA-Z])/(.*)$', path)
+    if m and not os.path.exists(path):
+        path = f'{m.group(1).upper()}:\\' + m.group(2).replace('/', '\\')
     ctype = mimetypes.guess_type(path)[0] or 'image/jpeg'
     data = open(path, 'rb').read()
     boundary = '----xostavar' + uuid.uuid4().hex

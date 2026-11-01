@@ -97,7 +97,29 @@ Variantsiz, qadoqli:
 - Sozlamalar (kategoriya/andoza/birlik) faqat 1-kompyuterdan o'zgartiriladi.
 - Har kompyuter o'z logini bilan ishlaydi (audit jurnalida kim qo'shgani ko'rinadi).
 
-## 6. Keyin: demo → production
+## 6. Avtomatik kuzatuv (Claude Code bilan)
+
+`tools/watch_rasmlar.py` papkani kuzatadi: yangi rasm tushib, nusxalash tugagach uning yo'lini chiqarib chiqadi.
+Claude Code uni fonda ishga tushiradi, chiqishi bilan rasmni 2-bo'lim tartibida kiritadi va kuzatuvni qayta boshlaydi.
+Rasm nomi avvalgidek: `nom narx:115,000 tannarx:100,000.jpg` (bo'shliq bilan yozilgan `115 000 sum tannarx 100 000` ham tushunarli).
+
+Claude Code'ga beriladigan prompt (login/parolni o'zingiznikiga almashtiring):
+
+```
+Biz qurilish mollari do'koni uchun Ombor Control (Xostavar) tizimiga real mahsulotlarni kiritmoqdamiz, hammasi demo serverga
+(https://demo.ombor-control.uz) yoziladi. Avval `git -C backend pull` qil va backend/docs/MAHSULOT-KIRITISH.md ni to'liq o'qib, unga qat'iy amal qil.
+Muhit: XOSTAVAR_API=https://demo.ombor-control.uz/api/v1, XOSTAVAR_LOGIN=<LOGIN>, XOSTAVAR_PASSWORD=<PAROL>; ulanishni `addprod.py settings` bilan tekshir.
+
+Keyin kuzatuv rejimiga o't: `python backend/tools/watch_rasmlar.py` ni fonda (run_in_background) ishga tushir. U chiqishi bilan
+chiqargan har bir rasm uchun yo'riqnomaning 2-bo'limini bajar: rasmni ko'rib aniqla, `search` bilan dublikat tekshir (bor bo'lsa — variant/narx
+yangilash kerakmi, qara), internetdan ma'lumot va toza rasm top (topilmasa — do'kondagi suratni idish atrofini kesib qo'y), spec.json yoz,
+`add` (yoki `update`), rasmni biriktir, `done` bilan rasmni qoshilgan/ ga ko'chir, qisqa hisobot ber (nom, kategoriya, SKU, variantlar,
+narx/tannarx, rasm manbasi, tasdiqlanishi kerak bo'lgan narsalar). Hammasi tugagach kuzatuvni yana fonda ishga tushir va shu tartibda davom et.
+Yangi kategoriya/birlik/andoza qo'shma (kerak bo'lsa hisobotda yoz), hech narsani o'chirma, sozlamalarni o'zgartirma, rasmlarni git'ga qo'shma.
+Windows'da rasm yo'lini Windows ko'rinishida ber (C:\...). Hisobotlar o'zbek tilida.
+```
+
+## 7. Keyin: demo → production
 
 `docs/DEPLOY.md` dagi "Lokal → demo" usuli bilan: demo bazasi `pg_dump -Fc` + `uploads` volume → production'ga tiklash.
 Bu production'dagi foydalanuvchilar va parollarni ham almashtiradi — ko'chirgandan keyin admin parolini darhol o'zgartiring.
