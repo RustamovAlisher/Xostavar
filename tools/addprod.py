@@ -15,16 +15,20 @@ Buyruqlar:
   addprod.py update <SKU> <spec.json>     mavjud mahsulotni yangilash (versiya avtomatik olinadi)
   addprod.py done <SKU> <rasm...>         ishlov berilgan rasmlarni `qoshilgan/` papkasiga SKU prefiksi bilan ko'chirish
 
-spec.json — POST /products tanasi + "categoryName" (kategoriya nomi) + ixtiyoriy "image":
+spec.json — POST /products tanasi + "categoryName" (kategoriya nomi) + ixtiyoriy "image" va "costPrice" (tannarx):
   {
     "categoryName": "Bo'yoqlar",
-    "name": "Numix Reliance molotkovaya bo'yoq (bolg'a effektli emal)",
+    "name": "Numix Reliance molotkovaya bo'yoq 2,2 kg (bolg'a effektli emal)",
     "sku": "NUMIX-REL", "baseUnit": "piece", "isDivisible": false, "conversions": [],
     "description": "…", "isVariable": true,
-    "variants": [{ "name": "407 (mis tus)", "sku": "NUMIX-REL-407", "retailPrice": 100000 }],
+    "costPrice": 80000,
+    "variants": [{ "name": "407", "sku": "NUMIX-REL-407", "retailPrice": 100000 },
+                 { "name": "444", "sku": "NUMIX-REL-444", "retailPrice": 100000, "costPrice": 82000 }],
     "image": "https://…/rasm.jpg"
   }
-Variantsiz mahsulot: "isVariable": false, "retailPrice": 25000 (variants yo'q).
+Variantsiz mahsulot: "isVariable": false, "retailPrice": 25000, "costPrice": 18000 (variants yo'q).
+Variantli mahsulotda yuqori darajadagi "costPrice" o'z tannarxi yozilmagan barcha variantlarga qo'llanadi.
+Tannarx asosiy filial (MAIN) uchun yoziladi — skript X-Branch-Id ni o'zi qo'yadi.
 """
 import json, mimetypes, os, re, shutil, sys, tempfile, urllib.parse, urllib.request, uuid
 
@@ -32,6 +36,7 @@ BASE = os.environ.get('XOSTAVAR_API', 'https://demo.ombor-control.uz/api/v1').rs
 LOGIN = os.environ.get('XOSTAVAR_LOGIN', 'admin')
 PASSWORD = os.environ.get('XOSTAVAR_PASSWORD', '1234')
 _tok = None
+_branch = None  # asosiy filial id — tannarx/qoldiq shu filial uchun
 
 
 def call(method, path, body=None, headers=None, raw=None):
@@ -39,6 +44,8 @@ def call(method, path, body=None, headers=None, raw=None):
     h = dict(headers or {})
     if _tok:
         h['Authorization'] = 'Bearer ' + _tok
+    if _branch:
+        h['X-Branch-Id'] = _branch
     data = None
     if raw is not None:
         data = raw
@@ -65,8 +72,11 @@ def call(method, path, body=None, headers=None, raw=None):
 
 
 def login():
-    global _tok
+    global _tok, _branch
     _tok = call('POST', '/auth/login', {'login': LOGIN, 'password': PASSWORD})['accessToken']
+    branches = call('GET', '/branches')
+    main = [b for b in branches if b.get('isMain')] or [b for b in branches if b.get('code') == 'MAIN'] or branches[:1]
+    _branch = main[0]['id'] if main else None
 
 
 def settings():
@@ -107,8 +117,18 @@ def upload(pid, src):
 
 
 def brief(p):
-    v = [(x['sku'], x['name'], x['retailPrice']) for x in p.get('variants') or []]
-    return f"{p['sku']} | {p['name']} | {p['baseUnit']} | {'variantlar: ' + str(v) if v else 'narx ' + str(p['retailPrice'])} | rasm: {'bor' if p.get('imageUrl') else 'yoq'}"
+    cost = lambda x: f"/t{x['costPrice']}" if x.get('costPrice') else ''
+    v = [f"{x['sku']} {x['name']} {x['retailPrice']}{cost(x)}" for x in p.get('variants') or []]
+    return f"{p['sku']} | {p['name']} | {p['baseUnit']} | {'variantlar (narx/t=tannarx): ' + '; '.join(v) if v else 'narx ' + str(p['retailPrice']) + cost(p)} | rasm: {'bor' if p.get('imageUrl') else 'yoq'}"
+
+
+def apply_cost(spec):
+    """Variantli mahsulotda yuqori darajadagi costPrice → o'z tannarxi yo'q variantlarga."""
+    if spec.get('isVariable') and spec.get('costPrice') is not None:
+        for v in spec.get('variants') or []:
+            v.setdefault('costPrice', spec['costPrice'])
+        spec.pop('costPrice')
+    return spec
 
 
 def resolve_category(spec):
@@ -170,7 +190,7 @@ def main():
             for p in similar:
                 print('  ' + brief(p))
             sys.exit(2)
-        p = call('POST', '/products', spec)
+        p = call('POST', '/products', apply_cost(spec))
         print('QO\'SHILDI: ' + brief(p))
         if image:
             r = upload(p['id'], image)
@@ -194,7 +214,7 @@ def main():
             'version': cur['version'],
         }
         body.update(spec)
-        p = call('PUT', f"/products/{cur['id']}", body)
+        p = call('PUT', f"/products/{cur['id']}", apply_cost(body))
         print('YANGILANDI: ' + brief(p))
         if image:
             r = upload(p['id'], image)
