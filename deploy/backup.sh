@@ -14,11 +14,18 @@ if pg_dump -h postgres -U "$DB_USER" -d "$DB_NAME" -Fc -f "$f"; then
   echo "zaxira: $f ($size)"
   if [ -n "${TELEGRAM_BOT_TOKEN:-}" ] && [ -n "${TELEGRAM_CHAT_ID:-}" ]; then
     cap="✅ Xostavar zaxira $(date '+%d.%m.%Y %H:%M') — $size"
-    if curl -sS -m 120 -o /tmp/tg.json -X POST "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/sendDocument" \
-         -F chat_id="$TELEGRAM_CHAT_ID" -F caption="$cap" -F document=@"$f"; then
-      grep -q '"ok":true' /tmp/tg.json && echo "telegram: yuborildi" || { echo "telegram javobi: $(cat /tmp/tg.json)"; }
+    send_doc() { curl -sS -m 120 -o /tmp/tg.json -X POST "https://api.telegram.org/bot$TELEGRAM_BOT_TOKEN/sendDocument" \
+         -F chat_id="$1" -F caption="$cap" -F document=@"$f" && grep -q '"ok":true' /tmp/tg.json; }
+    if send_doc "$TELEGRAM_CHAT_ID"; then
+      echo "telegram: yuborildi"
     else
-      echo "telegram: yuborilmadi"
+      # Guruh supergroup'ga aylangan bo'lsa Telegram yangi ID beradi — shunga qayta yuboramiz
+      new_id=$(grep -oE '"migrate_to_chat_id":-?[0-9]+' /tmp/tg.json 2>/dev/null | cut -d: -f2)
+      if [ -n "$new_id" ] && send_doc "$new_id"; then
+        echo "telegram: yuborildi (guruh ID o'zgargan: $new_id — .env.prod da TELEGRAM_CHAT_ID=$new_id qiling)"
+      else
+        echo "telegram javobi: $(cat /tmp/tg.json 2>/dev/null)"
+      fi
     fi
   fi
 else
