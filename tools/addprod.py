@@ -13,6 +13,7 @@ Buyruqlar:
   addprod.py image <SKU> <fayl|URL>       rasm biriktirish (URL bo'lsa yuklab olinadi; server 1200px + eskizga keltiradi)
   addprod.py show <SKU>                   mahsulotni to'liq ko'rsatish
   addprod.py update <SKU> <spec.json>     mavjud mahsulotni yangilash (versiya avtomatik olinadi)
+  addprod.py done <SKU> <rasm...>         ishlov berilgan rasmlarni `qoshilgan/` papkasiga SKU prefiksi bilan ko'chirish
 
 spec.json — POST /products tanasi + "categoryName" (kategoriya nomi) + ixtiyoriy "image":
   {
@@ -25,7 +26,7 @@ spec.json — POST /products tanasi + "categoryName" (kategoriya nomi) + ixtiyor
   }
 Variantsiz mahsulot: "isVariable": false, "retailPrice": 25000 (variants yo'q).
 """
-import json, mimetypes, os, re, sys, tempfile, urllib.parse, urllib.request, uuid
+import json, mimetypes, os, re, shutil, sys, tempfile, urllib.parse, urllib.request, uuid
 
 BASE = os.environ.get('XOSTAVAR_API', 'https://demo.ombor-control.uz/api/v1').rstrip('/')
 LOGIN = os.environ.get('XOSTAVAR_LOGIN', 'admin')
@@ -125,8 +126,17 @@ def main():
     if len(sys.argv) < 2:
         print(__doc__)
         sys.exit(0)
-    login()
     cmd = sys.argv[1]
+    if cmd == 'done':  # serverga ulanish shart emas
+        sku = sys.argv[2]
+        for f in sys.argv[3:]:
+            dst_dir = os.path.join(os.path.dirname(os.path.abspath(f)), 'qoshilgan')
+            os.makedirs(dst_dir, exist_ok=True)
+            dst = os.path.join(dst_dir, f'{sku}__{os.path.basename(f)}')
+            shutil.move(f, dst)
+            print('ko\'chirildi:', dst)
+        return
+    login()
     if cmd == 'settings':
         s = settings()
         print('== kategoriyalar')

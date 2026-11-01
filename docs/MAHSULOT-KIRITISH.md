@@ -24,6 +24,9 @@ Rasmlar `real-mahsulotlar-rasimlari/` papkasida; fayl nomida mahsulot nomi va na
 4. **spec.json yozish** (namuna pastda) va `addprod.py add spec.json`. 409 `duplicate_code` kelsa — SKU band, `search` bilan tekshiring.
 5. **Rasm**: `"image"` maydoni (URL yoki fayl) bilan `add` da, yoki keyin `addprod.py image <SKU> <URL|fayl>`.
 6. **Hisobot**: nom, kategoriya, SKU, variantlar va narx, rasm manbasi, tasdiqlanmagan narsalar (hajm, rang nomi).
+7. **Rasmni ajratish** (adashmaslik uchun): ishlov berilgan rasm(lar) `real-mahsulotlar-rasimlari/qoshilgan/` ga SKU prefiksi bilan ko'chiriladi:
+   `addprod.py done NUMIX-REL real-mahsulotlar-rasimlari/photo_1.jpg real-mahsulotlar-rasimlari/photo_2.jpg`
+   → `qoshilgan/NUMIX-REL__photo_1.jpg`. Asosiy papkada faqat hali kiritilmagan rasmlar qoladi.
 
 ## 3. Qoidalar
 
