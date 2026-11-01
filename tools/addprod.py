@@ -159,6 +159,11 @@ def main():
             note = os.path.splitext(f)[0] + '.txt'  # rasm yonidagi izoh fayli ham birga ko'chadi
             for src in ([f, note] if os.path.isfile(note) else [f]):
                 dst = os.path.join(dst_dir, f'{sku}__{os.path.basename(src)}')
+                stem, ext = os.path.splitext(dst)
+                n = 2
+                while os.path.exists(dst):  # bir xil nomli rasm qayta kelsa oldingisi ustiga yozilmasin
+                    dst = f'{stem}_{n}{ext}'
+                    n += 1
                 shutil.move(src, dst)
                 print('ko\'chirildi:', dst)
         return
