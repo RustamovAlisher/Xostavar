@@ -40,6 +40,11 @@ def main():
             if stable:
                 for p in sorted(stable):
                     print(p, flush=True)
+                    # Rasm yonidagi izoh: xuddi shu nomli .txt (variantlar, narxlar, hajm, tannarx qoidasi…)
+                    note = os.path.splitext(p)[0] + '.txt'
+                    if os.path.isfile(note):
+                        for line in open(note, encoding='utf-8', errors='replace').read().splitlines():
+                            print('    izoh: ' + line, flush=True)
                 return
         prev = cur
         time.sleep(interval)

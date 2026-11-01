@@ -103,6 +103,14 @@ Variantsiz, qadoqli:
 Claude Code uni fonda ishga tushiradi, chiqishi bilan rasmni 2-bo'lim tartibida kiritadi va kuzatuvni qayta boshlaydi.
 Rasm nomi avvalgidek: `nom narx:115,000 tannarx:100,000.jpg` (bo'shliq bilan yozilgan `115 000 sum tannarx 100 000` ham tushunarli).
 
+**Uzun izoh** (variantlar ro'yxati, bir nechta narx, hajm, tannarx qoidasi) fayl nomiga sig'masa — rasm yoniga **xuddi shu nomli `.txt`**
+qo'yiladi: `koronka.jpg` + `koronka.txt`. Kuzatuvchi rasm bilan birga izohni ham chiqaradi, `done` ikkalasini `qoshilgan/` ga ko'chiradi. Masalan:
+```
+Koronka po steklu (LIT)
+60 mm — 30 000, 65 mm — 35 000, 70 mm — 40 000
+Tannarx hammasida narxdan 10 000 arzon
+```
+
 Claude Code'ga beriladigan prompt (login/parolni o'zingiznikiga almashtiring):
 
 ```

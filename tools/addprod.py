@@ -156,9 +156,11 @@ def main():
         for f in sys.argv[3:]:
             dst_dir = os.path.join(os.path.dirname(os.path.abspath(f)), 'qoshilgan')
             os.makedirs(dst_dir, exist_ok=True)
-            dst = os.path.join(dst_dir, f'{sku}__{os.path.basename(f)}')
-            shutil.move(f, dst)
-            print('ko\'chirildi:', dst)
+            note = os.path.splitext(f)[0] + '.txt'  # rasm yonidagi izoh fayli ham birga ko'chadi
+            for src in ([f, note] if os.path.isfile(note) else [f]):
+                dst = os.path.join(dst_dir, f'{sku}__{os.path.basename(src)}')
+                shutil.move(src, dst)
+                print('ko\'chirildi:', dst)
         return
     login()
     if cmd == 'settings':
