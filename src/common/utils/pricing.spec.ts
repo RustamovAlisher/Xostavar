@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { averageCost, calcLine, conversionsOf, factorOf, priceOf, sellableUnits, vatIncluded, type PriceTarget } from './pricing.js';
+import { averageCost, calcLine, conversionsOf, factorOf, priceOf, sellableUnits, type PriceTarget } from './pricing.js';
 
 /** Armatura Ø12 (TZ 21, Ilova B): asosiy birlik metr, 12 500 so'm/m, 1 kg = 1.1261 m, 1 tayoq = 11.7 m. */
 const arm: PriceTarget = {
@@ -112,11 +112,7 @@ describe('kesim (TZ 8.2)', () => {
   });
 });
 
-describe('QQS va o\'rtacha tannarx', () => {
-  it('QQS narxga kiritilgan: 480 000 × 12 / 112', () => {
-    expect(vatIncluded(480000, 12)).toBe(51428.57);
-    expect(vatIncluded(480000, 0)).toBe(0);
-  });
+describe('O\'rtacha tannarx', () => {
   it('averageCost (TZ 8.6): og\'irlikli o\'rtacha; 0 tannarx eski qiymatni saqlaydi; qoldiq 0 → yangi tannarx', () => {
     expect(averageCost(1170, 11965.81, 585, 14017.09)).toBe(12649.57);
     expect(averageCost(100, 5000, 50, 0)).toBe(5000);

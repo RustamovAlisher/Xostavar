@@ -19,7 +19,6 @@ export class BusinessRulesDto {
   @IsNumber() @Min(0) defaultMinStock: number;
   @IsInt() @Min(0) defaultCreditDays: number;
   @IsInt() @Min(0) defaultCreditLimit: number;
-  @IsNumber() @Min(0) @Max(100) vatPct: number;
   @IsNumber() @Min(0) @Max(100) estimatedMarginPct: number;
   @IsArray() @ArrayMaxSize(6) @IsInt({ each: true }) @Min(1, { each: true }) @Max(99, { each: true }) quickDownPaymentPcts: number[];
   @IsBoolean() allowNegativeStock: boolean;

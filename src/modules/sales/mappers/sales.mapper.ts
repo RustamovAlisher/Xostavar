@@ -24,7 +24,6 @@ export interface QuoteTotals {
   subtotal: number;
   discount: number;
   total: number;
-  vat: number;
   profit: number;
 }
 
@@ -32,14 +31,14 @@ export interface QuoteTotals {
 export function toQuoteView(q: QuoteTotals, withCost: boolean, warnings: QuoteWarning[]) {
   return {
     lines: q.lines.map(({ available, costPerBase, ...l }) => ({ ...l, available, ...(withCost ? { costPerBase } : {}) })),
-    subtotal: q.subtotal, discountAmount: q.discount, totalAmount: q.total, vatIncluded: q.vat, ...(withCost ? { profit: q.profit } : {}), warnings,
+    subtotal: q.subtotal, discountAmount: q.discount, totalAmount: q.total, ...(withCost ? { profit: q.profit } : {}), warnings,
   };
 }
 
 /** Chek javobi: numeric → son; foyda va tannarx faqat `view_cost_price` bilan. */
 export function toSaleView(s: SaleRow, lines: SaleLineRow[], pays: SalePaymentRow[], withCost: boolean) {
   return {
-    ...s, vatIncluded: Number(s.vatIncluded), ...(withCost ? {} : { profit: undefined }),
+    ...s, ...(withCost ? {} : { profit: undefined }),
     lines: lines.map((l) => ({ ...l, qty: Number(l.qty), baseQty: Number(l.baseQty), costPerBase: withCost && l.costPerBase != null ? Number(l.costPerBase) : undefined })),
     payments: pays.map((p) => ({ method: p.methodCode, methodId: p.methodId, kind: p.kind, amount: p.amount, ref: p.ref })),
   };

@@ -64,7 +64,7 @@ export class SettingsService {
       await this.repo.upsertRules(tx, {
         pieceLengthMeters: r.pieceLengthMeters, defaultCutLengthMeters: r.defaultCutLengthMeters, cutDeductionMode: r.cutDeductionMode,
         defaultMinStock: r.defaultMinStock, defaultCreditDays: r.defaultCreditDays, defaultCreditLimit: r.defaultCreditLimit,
-        vatPct: r.vatPct, estimatedMarginPct: r.estimatedMarginPct, quickDownPaymentPcts: r.quickDownPaymentPcts,
+        estimatedMarginPct: r.estimatedMarginPct, quickDownPaymentPcts: r.quickDownPaymentPcts,
         allowNegativeStock: r.allowNegativeStock, requireShift: r.requireShift, cashierMaxDiscount: r.cashierMaxDiscount,
       });
       await this.audit.log(actor, { action: 'edit', module: 'Sozlamalar', targetName: 'Tizim sozlamalari', details: 'Sozlamalar yangilandi' }, tx);

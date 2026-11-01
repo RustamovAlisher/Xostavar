@@ -5,7 +5,7 @@ import type { AuthUser } from '../../../common/decorators/auth-context.js';
 import { conflict, forbidden, isUniqueViolation, notFound, unprocessable } from '../../../common/errors/app-error.js';
 import { dayKey, qty4 } from '../../../common/utils/numbers.js';
 import { page } from '../../../common/utils/pagination.js';
-import { calcLine, factorOf, priceOf, vatIncluded } from '../../../common/utils/pricing.js';
+import { calcLine, factorOf, priceOf } from '../../../common/utils/pricing.js';
 import { AuditService } from '../../audit/services/audit.service.js';
 import { CustomersService } from '../../customers/services/customers.service.js';
 import { InventoryService } from '../../inventory/services/inventory.service.js';
@@ -35,7 +35,7 @@ export class SalesService {
   ) {}
 
   /** Hammasini yoki faqat o'z cheklarini ko'rish (TZ 9.6). */
-  private seeAll = (user: AuthUser) => user.permissions.includes('view_analytics') || user.permissions.includes('manage_users');
+  private seeAll = (user: AuthUser) => user.permissions.includes('view_all_sales');
   private withCost = (user: AuthUser) => user.permissions.includes('view_cost_price');
 
   /* ───────── Hisob (quote) ───────── */
@@ -86,7 +86,7 @@ export class SalesService {
     const margin = Number(rules.estimatedMarginPct) / 100;
     const costSum = lines.reduce((a, l) => a + (l.costPerBase != null ? l.baseQty * l.costPerBase : l.lineTotal * (1 - margin)), 0);
     const profit = Math.round(total - costSum);
-    return { rules, lines, subtotal, discount, total, vat: vatIncluded(total, Number(rules.vatPct)), profit, need, levels, warnings };
+    return { rules, lines, subtotal, discount, total, profit, need, levels, warnings };
   }
 
   /** POST /sales/quote — saqlamaydi, frontend savatni shu bilan tekshiradi. */
@@ -161,7 +161,7 @@ export class SalesService {
       const number = await this.nextNumber(tx, branchId, b!.code);
       const saleId = await this.repo.insertSale(tx, {
         branchId, number, type: 'sale', shiftId, cashierId: user.id, cashierName: user.name, customerId: customer?.id ?? null, customerName: customer?.name ?? 'Oddiy mijoz',
-        paymentSummary, subtotal: q.subtotal, discountAmount: q.discount, totalAmount: q.total, paidAmount: paid, remainingDebt: remaining, profit: q.profit, vatIncluded: q.vat, clientId: dto.clientId ?? null,
+        paymentSummary, subtotal: q.subtotal, discountAmount: q.discount, totalAmount: q.total, paidAmount: paid, remainingDebt: remaining, profit: q.profit, clientId: dto.clientId ?? null,
       });
       await this.repo.insertLines(tx, q.lines.map((l, i) => ({ saleId, productId: l.productId, variantId: l.variantId, name: l.name, variantName: l.variantName, sku: l.sku, categoryId: l.categoryId, unit: l.unit, qty: l.qty, baseQty: l.baseQty, unitPrice: l.unitPrice, lineTotal: l.lineTotal, costPerBase: l.costPerBase, cuts: l.cuts ?? null, sortOrder: i })));
       if (pays.length) await this.repo.insertPayments(tx, pays.map((p) => ({ saleId, methodId: p.m.id, methodCode: p.m.code, kind: p.m.kind, amount: p.amount, ref: p.ref })));
@@ -259,7 +259,7 @@ export class SalesService {
     return toSaleView(s, lines, pays, this.withCost(user));
   }
 
-  /** Ro'yxat: kassir faqat o'zinikini, view_analytics/manage_users hammasini (TZ 9.6). 4 ta so'rov. */
+  /** Ro'yxat: kassir faqat o'zinikini, `view_all_sales` hammasini (TZ 9.6). 4 ta so'rov. */
   async list(user: AuthUser, branchId: string, q: SalesListQuery) {
     const [items, total] = await this.repo.list(branchId, this.seeAll(user) ? q.cashierId : user.id, q);
     const [lines, pays] = await this.repo.detailsMany(items.map((s) => s.id));

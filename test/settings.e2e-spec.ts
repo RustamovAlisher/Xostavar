@@ -14,7 +14,7 @@ describe('settings (TZ 7.2, 9.3)', () => {
   it('GET: barcha lug\'atlar bir javobda, seed qiymatlari', async () => {
     const d = await bundle();
     expect(d.store.name).toBe('OMBOR CONTROL');
-    expect(d.rules).toMatchObject({ vatPct: 12, requireShift: true, cashierMaxDiscount: 0, defaultCreditDays: 30 });
+    expect(d.rules).toMatchObject({ requireShift: true, cashierMaxDiscount: 0, defaultCreditDays: 30 });
     expect(d.units.map((u: { id: string }) => u.id)).toContain('meter');
     expect(d.categories.length).toBe(8);
     expect(d.sizePresets.length).toBe(13);
@@ -37,9 +37,9 @@ describe('settings (TZ 7.2, 9.3)', () => {
     expect(log.branchId).toBeNull(); // umumiy amal
   });
 
-  it('validatsiya: QQS 0–100, takror nomlar, oxirgi kategoriya, bo\'sh do\'kon nomi, nasiya bo\'lmagan usul yo\'q', async () => {
+  it('validatsiya: takror nomlar, oxirgi kategoriya, bo\'sh do\'kon nomi, nasiya bo\'lmagan usul yo\'q', async () => {
     const d = await bundle();
-    expect((await s.admin.put('/settings', { ...d, rules: { ...d.rules, vatPct: 120 } })).status).toBe(400);
+    expect((await s.admin.put('/settings', { ...d, rules: { ...d.rules, estimatedMarginPct: 120 } })).status).toBe(400);
     expect((await s.admin.put('/settings', { ...d, store: { ...d.store, name: '' } })).status).toBe(400);
     const dupCat = await s.admin.put('/settings', { ...d, categories: [...d.categories, { ...d.categories[0], id: undefined, name: d.categories[0].name.toUpperCase() }] });
     expect(dupCat.status).toBe(422);
@@ -134,11 +134,11 @@ describe('settings (TZ 7.2, 9.3)', () => {
 
   it('reset: standart qiymatlar qaytadi, ishlatilayotgan maxsus yozuvlar saqlanadi', async () => {
     const d = await bundle();
-    await s.admin.put('/settings', { ...d, store: { ...d.store, name: 'Boshqa nom' }, rules: { ...d.rules, vatPct: 15 } });
+    await s.admin.put('/settings', { ...d, store: { ...d.store, name: 'Boshqa nom' }, rules: { ...d.rules, estimatedMarginPct: 25 } });
     const r = await s.admin.post('/settings/reset', {}, { idem: false });
     expect(r.status).toBe(201);
     expect(r.body.store.name).toBe('OMBOR CONTROL');
-    expect(r.body.rules.vatPct).toBe(12);
+    expect(r.body.rules.estimatedMarginPct).toBe(16);
     expect(r.body.paymentMethods.find((m: { code: string }) => m.code === 'cash').enabled).toBe(true);
     expect(r.body.paymentMethods.some((m: { label: string }) => m.label === 'Click')).toBe(true); // maxsus usul saqlandi
     expect((await s.admin.get('/audit-logs?action=settings_reset')).body.total).toBeGreaterThan(0);

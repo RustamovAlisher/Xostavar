@@ -121,8 +121,6 @@ export function calcLine(t: PriceTarget, unit: string, qty: number, cuts: Cut[] 
   return { unit, qty: q, baseQty: roundTo(baseQty, 4), unitPrice, lineTotal: Math.round(unitPrice * q), cuts: hasCuts ? cuts : undefined };
 }
 
-/** QQS narxga kiritilgan (TZ 8.4): faqat ko'rsatish uchun. */
-export const vatIncluded = (total: number, vatPct: number) => (vatPct > 0 ? roundTo((total * vatPct) / (100 + vatPct), 2) : 0);
 
 /** O'rtacha tannarx (TZ 8.6). costPerBase = 0 bo'lsa eski qoladi. */
 export function averageCost(oldStock: number, oldCost: number | null, addQty: number, costPerBase: number): number | null {

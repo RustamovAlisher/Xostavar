@@ -39,9 +39,9 @@ export class SalesController {
     return this.sales.get(u, id, true);
   }
 
-  /** Storno (TZ 7.9): administrator, sabab bilan. */
+  /** Storno (TZ 7.9): `void_sale` huquqi, sabab bilan. */
   @Post(':id/void')
-  @Perms('manage_users')
+  @Perms('void_sale')
   @Idempotent()
   void(@CurrentUser() u: AuthUser, @BranchId() branchId: string, @Req() req: AuthRequest, @Param('id', ParseUUIDPipe) id: string, @Body() dto: VoidSaleDto) {
     return this.sales.void(u, branchId, id, dto.reason, requestIdOf(req));

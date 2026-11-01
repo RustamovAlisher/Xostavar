@@ -3,7 +3,7 @@ export const DEFAULT_SETTINGS = {
   store: { name: 'OMBOR CONTROL', subtitle: 'Metal & Qurilish Materiallar Ombori', address: '', phone: '', taxId: '', receiptFooter: 'Xarid va hamkorlik uchun rahmat!', printFormat: 'thermal' as const, paperWidthMm: 80 },
   rules: {
     pieceLengthMeters: 11.7, defaultCutLengthMeters: 6, cutDeductionMode: 'net' as const, defaultMinStock: 0, defaultCreditDays: 30,
-    defaultCreditLimit: 5_000_000, vatPct: 12, estimatedMarginPct: 16, quickDownPaymentPcts: [25, 50], allowNegativeStock: false, requireShift: true, cashierMaxDiscount: 0,
+    defaultCreditLimit: 5_000_000, estimatedMarginPct: 16, quickDownPaymentPcts: [25, 50], allowNegativeStock: false, requireShift: true, cashierMaxDiscount: 0,
   },
   units: [
     { id: 'piece', name: 'Dona', short: 'dona', precision: 0 },
@@ -57,14 +57,15 @@ export const DEFAULT_SETTINGS = {
 export const ALL_PERMISSIONS = [
   'view_pos', 'view_inventory', 'view_analytics', 'view_debts', 'view_audit_logs', 'view_users',
   'add_product', 'edit_product', 'delete_product', 'stock_in', 'give_debt', 'view_cost_price', 'view_expenses', 'manage_expenses',
+  'view_all_sales', 'void_sale',
   'manage_users', 'manage_branches', 'manage_settings',
 ];
 
 /** Standart rollar — frontend `DEFAULT_ROLES` bilan bir xil; "Super Admin" = Egasi (all_branches). */
 export const DEFAULT_ROLES = [
   { name: 'Super Admin', allBranches: true, permissions: ALL_PERMISSIONS },
-  { name: 'Filial admini', allBranches: false, permissions: ['view_pos', 'view_inventory', 'view_analytics', 'view_debts', 'view_audit_logs', 'view_users', 'stock_in', 'give_debt', 'view_cost_price', 'view_expenses', 'manage_expenses', 'manage_users'] },
+  { name: 'Filial admini', allBranches: false, permissions: ['view_pos', 'view_inventory', 'view_analytics', 'view_debts', 'view_audit_logs', 'view_users', 'stock_in', 'give_debt', 'view_cost_price', 'view_expenses', 'manage_expenses', 'view_all_sales', 'void_sale', 'manage_users'] },
   { name: 'Kassir', allBranches: false, permissions: ['view_pos', 'view_debts', 'give_debt'] },
   { name: 'Omborchi', allBranches: false, permissions: ['view_pos', 'view_inventory', 'add_product', 'edit_product', 'stock_in'] },
-  { name: 'Buxgalter', allBranches: false, permissions: ['view_pos', 'view_inventory', 'view_analytics', 'view_debts', 'view_audit_logs', 'view_cost_price', 'view_expenses', 'manage_expenses'] },
+  { name: 'Buxgalter', allBranches: false, permissions: ['view_pos', 'view_inventory', 'view_analytics', 'view_debts', 'view_audit_logs', 'view_cost_price', 'view_expenses', 'manage_expenses', 'view_all_sales'] },
 ];

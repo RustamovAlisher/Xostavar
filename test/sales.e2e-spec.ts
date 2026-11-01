@@ -34,7 +34,7 @@ describe('sales (TZ 8, 9.6, 20)', () => {
   const cash = (amount: number) => [{ methodId: s.methods.cash, amount }];
 
   describe('quote', () => {
-    it('narxlar serverda: dona, metr (kesim), kg; chegirma; QQS; foyda (view_cost_price); available', async () => {
+    it('narxlar serverda: dona, metr (kesim), kg; chegirma; foyda (view_cost_price); available', async () => {
       const r = await c.post('/sales/quote', {
         lines: [
           { productId: arm.id, variantId: arm.variants[0].id, unit: 'piece', qty: 2 },
@@ -49,7 +49,7 @@ describe('sales (TZ 8, 9.6, 20)', () => {
       // 10 kg sement = 0.2 qop → bo'linmas: 1 qop (50 kg), kg narxi 1400
       expect(r.body.lines[2]).toMatchObject({ unit: 'kg', qty: 50, baseQty: 1, unitPrice: 1400, lineTotal: 70000 });
       expect(r.body).toMatchObject({ subtotal: 512500, discountAmount: 10000, totalAmount: 502500, warnings: [] });
-      expect(r.body.vatIncluded).toBeCloseTo((502500 * 12) / 112, 1);
+      expect(r.body.vatIncluded).toBeUndefined();
       // foyda: 502500 − (23.4+12)×11965.81 − 1×56000
       expect(r.body.profit).toBe(Math.round(502500 - 35.4 * 11965.81 - 56000));
       expect(r.body.lines[0].costPerBase).toBeCloseTo(11965.81, 1);
@@ -212,7 +212,7 @@ describe('sales (TZ 8, 9.6, 20)', () => {
       expect((await c.post(`/customers/${customer.id}/payments`, { amount: 0, methodId: s.methods.cash })).status).toBe(400);
       expect((await c.get('/shifts/current')).body.totals.debtPayments).toBeGreaterThanOrEqual(50000);
     });
-    it('storno: faqat manage_users, sabab majburiy; qoldiq qaytadi (sale_void), nasiya qarzi kamayadi; takror → already_voided; boshqa filial → 403', async () => {
+    it('storno: faqat void_sale, sabab majburiy; qoldiq qaytadi (sale_void), nasiya qarzi kamayadi; takror → already_voided; boshqa filial → 403', async () => {
       const stockBefore = (await c.get(`/products/${cement.id}`)).body.stock;
       const sale = await c.post('/sales', { lines: [{ productId: cement.id, unit: 'bag', qty: 2 }], customerId: customer.id, onCredit: true, payments: cash(30000) });
       expect(sale.status).toBe(201);

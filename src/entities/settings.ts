@@ -26,7 +26,6 @@ export const businessRules = pgTable('business_rules', {
   defaultMinStock: qty('default_min_stock').notNull().default(0),
   defaultCreditDays: integer('default_credit_days').notNull().default(30),
   defaultCreditLimit: money('default_credit_limit').notNull().default(5_000_000),
-  vatPct: numeric('vat_pct', { precision: 5, scale: 2, mode: 'number' }).notNull().default(12),
   estimatedMarginPct: numeric('estimated_margin_pct', { precision: 5, scale: 2, mode: 'number' }).notNull().default(16),
   quickDownPaymentPcts: integer('quick_down_payment_pcts').array().notNull().default([25, 50]),
   allowNegativeStock: boolean('allow_negative_stock').notNull().default(false),
