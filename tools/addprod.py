@@ -8,7 +8,7 @@ Muhit o'zgaruvchilari:
 
 Buyruqlar:
   addprod.py settings                     kategoriyalar, birliklar, o'lcham andozalari
-  addprod.py search <matn>                nom / SKU bo'yicha qidirish (dublikat tekshiruvi — add dan OLDIN)
+  addprod.py search <matn> [matn2 ...]    nom / SKU bo'yicha qidirish (dublikat tekshiruvi — add dan OLDIN); bir nechta so'z mumkin
   addprod.py add <spec.json> [--force]    mahsulot yaratish; spec ichida "image" bo'lsa rasm ham biriktiriladi
   addprod.py image <SKU> <fayl|URL>       rasm biriktirish (URL bo'lsa yuklab olinadi; server 1200px + eskizga keltiradi)
   addprod.py show <SKU>                   mahsulotni to'liq ko'rsatish
@@ -30,7 +30,7 @@ Variantsiz mahsulot: "isVariable": false, "retailPrice": 25000, "costPrice": 180
 Variantli mahsulotda yuqori darajadagi "costPrice" o'z tannarxi yozilmagan barcha variantlarga qo'llanadi.
 Tannarx asosiy filial (MAIN) uchun yoziladi — skript X-Branch-Id ni o'zi qo'yadi.
 """
-import json, mimetypes, os, re, shutil, sys, tempfile, urllib.parse, urllib.request, uuid
+import hashlib, json, mimetypes, os, re, shutil, sys, tempfile, urllib.parse, urllib.request, uuid
 
 BASE = os.environ.get('XOSTAVAR_API', 'https://demo.ombor-control.uz/api/v1').rstrip('/')
 LOGIN = os.environ.get('XOSTAVAR_LOGIN', 'admin')
@@ -39,7 +39,7 @@ _tok = None
 _branch = None  # asosiy filial id — tannarx/qoldiq shu filial uchun
 
 
-def call(method, path, body=None, headers=None, raw=None):
+def call(method, path, body=None, headers=None, raw=None, _retry=True):
     req = urllib.request.Request(BASE + path, method=method)
     h = dict(headers or {})
     if _tok:
@@ -61,6 +61,9 @@ def call(method, path, body=None, headers=None, raw=None):
             t = r.read().decode()
             return json.loads(t) if t else None
     except urllib.error.HTTPError as e:
+        if e.code == 401 and _retry and not path.startswith('/auth/'):
+            login(force=True)  # keshlangan token eskirgan — qayta kirib bir marta takrorlaymiz
+            return call(method, path, body, headers, raw, _retry=False)
         msg = e.read().decode()[:800]
         try:
             msg = json.loads(msg)['error']
@@ -71,12 +74,29 @@ def call(method, path, body=None, headers=None, raw=None):
         sys.exit(1)
 
 
-def login():
+CACHE = os.path.join(tempfile.gettempdir(), f"xostavar-addprod-{hashlib.sha1((BASE + LOGIN).encode()).hexdigest()[:10]}.json")
+
+
+def login(force=False):
+    """Token keshlanadi (har chaqiruvda login qilinmaydi — serverda login rate limit bor); 401 da yangilanadi."""
     global _tok, _branch
+    if not force and os.path.exists(CACHE):
+        try:
+            c = json.load(open(CACHE))
+            _tok, _branch = c['token'], c.get('branch')
+            return
+        except Exception:
+            pass
+    _tok = None
     _tok = call('POST', '/auth/login', {'login': LOGIN, 'password': PASSWORD})['accessToken']
     branches = call('GET', '/branches')
     main = [b for b in branches if b.get('isMain')] or [b for b in branches if b.get('code') == 'MAIN'] or branches[:1]
     _branch = main[0]['id'] if main else None
+    try:
+        json.dump({'token': _tok, 'branch': _branch}, open(CACHE, 'w'))
+        os.chmod(CACHE, 0o600)
+    except Exception:
+        pass
 
 
 def settings():
@@ -179,10 +199,11 @@ def main():
         for p in s['sizePresets']:
             print(f"  {byc.get(p['categoryId'])}: {p['name']}{' — ' + str(p['kgPerMeter']) + ' kg/m' if p.get('kgPerMeter') else ''}")
     elif cmd == 'search':
-        items = search(sys.argv[2])
-        print(f'{len(items)} ta topildi' if items else 'hech narsa topilmadi')
-        for p in items:
-            print('  ' + brief(p))
+        for q in sys.argv[2:]:
+            items = search(q)
+            print(f'"{q}": {len(items)} ta topildi' if items else f'"{q}": hech narsa topilmadi')
+            for p in items:
+                print('  ' + brief(p))
     elif cmd == 'add':
         spec = json.load(open(sys.argv[2]))
         force = '--force' in sys.argv
