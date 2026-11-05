@@ -1,4 +1,4 @@
-import { boolean, index, integer, pgTable, text, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
+import { boolean, index, integer, numeric, pgTable, text, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
 import { createdAt, deletedAt, factor, id, money, updatedAt, version } from './common.js';
 import { categories, units } from './settings.js';
@@ -25,6 +25,12 @@ export const products = pgTable(
     /** Variantsiz mahsulot uchun; variantli mahsulotda 0 (narx variantlarda). Narxsiz = sotilmaydi (TZ 14.4 (5)). */
     retailPrice: money('retail_price').notNull().default(0),
     wholesalePrice: money('wholesale_price'),
+    /**
+     * Narx valyutasi: 'USD' bo'lsa asl narx `retail_price_usd` (va variantlarda), `retail_price` esa
+     * joriy kurs bo'yicha hisoblangan so'm — kurs yangilanganda avtomatik qayta hisoblanadi. Sotuv doim so'mda.
+     */
+    priceCurrency: text('price_currency', { enum: ['UZS', 'USD'] }).notNull().default('UZS'),
+    retailPriceUsd: numeric('retail_price_usd', { precision: 14, scale: 2, mode: 'number' }),
     isVariable: boolean('is_variable').notNull().default(false),
     /** Mahsulot rasmi: UPLOAD_DIR ga nisbatan yo'l (`products/<id>-<ts>.jpg`); `thumbPath` — 320px eskiz. */
     imagePath: text('image_path'),
@@ -54,6 +60,8 @@ export const productVariants = pgTable(
     sku: text('sku').notNull(),
     retailPrice: money('retail_price').notNull().default(0),
     wholesalePrice: money('wholesale_price'),
+    /** Ota mahsulot `price_currency = 'USD'` bo'lsa — asl narx dollarda. */
+    retailPriceUsd: numeric('retail_price_usd', { precision: 14, scale: 2, mode: 'number' }),
     sortOrder: integer('sort_order').notNull().default(0),
     deletedAt: deletedAt(),
     createdAt: createdAt(),

@@ -10,6 +10,7 @@ import { slug } from '../../../common/utils/numbers.js';
 import { page, type Page } from '../../../common/utils/pagination.js';
 import { assertVersion } from '../../../common/utils/version.js';
 import { AuditService } from '../../audit/services/audit.service.js';
+import { CurrencyService, usdToUzs } from '../../currency/services/currency.service.js';
 import type { BranchPriceDto, ProductDto, ProductListQuery, VariantDto } from '../dto/catalog.dto.js';
 import { allCodes, productSummary, toChildRows, toProductColumns, toProductViews, toVariantColumns, type ProductView } from '../mappers/catalog.mapper.js';
 import { CatalogRepository, NIL, type LevelFields, type ProductRow } from '../repositories/catalog.repository.js';
@@ -22,6 +23,7 @@ export class CatalogService {
     @Inject(DB) private readonly db: Db,
     private readonly repo: CatalogRepository,
     private readonly audit: AuditService,
+    private readonly currency: CurrencyService,
     config: ConfigService<Env, true>,
   ) {
     this.uploadDir = config.get('UPLOAD_DIR', { infer: true });
@@ -117,6 +119,20 @@ export class CatalogService {
     }
   }
 
+  /**
+   * Dollar narxli mahsulot: so'm narxi (`retailPrice`) server tomonidan joriy kurs bo'yicha hisoblanadi —
+   * mijoz yuborgan so'm qiymatiga ishonilmaydi. So'm narxli mahsulotda dollar maydonlari tozalanadi.
+   */
+  private async applyCurrency(tx: DbOrTx, dto: ProductDto): Promise<ProductDto> {
+    if (dto.priceCurrency !== 'USD') return { ...dto, priceCurrency: 'UZS', retailPriceUsd: null, variants: dto.variants?.map((v) => ({ ...v, retailPriceUsd: null })) };
+    const rate = await this.currency.requireRate(tx);
+    return {
+      ...dto,
+      retailPrice: dto.isVariable ? 0 : usdToUzs(dto.retailPriceUsd ?? 0, rate),
+      variants: dto.variants?.map((v) => ({ ...v, retailPrice: usdToUzs(v.retailPriceUsd ?? 0, rate) })),
+    };
+  }
+
   /** Bo'sh SKU larga avtomatik, unikal qiymat (TZ 7.3). */
   private async finalizeSkus(tx: DbOrTx, dto: ProductDto, exceptProductId?: string) {
     const taken = new Set((await this.repo.takenSkus(tx, exceptProductId)).map((s) => s.toLowerCase()));
@@ -150,15 +166,16 @@ export class CatalogService {
     await this.repo.upsertLevelFields(tx, branchId, productId, variantId, set);
   }
 
-  async create(user: AuthUser, branchId: string | null, dto: ProductDto): Promise<ProductView> {
+  async create(user: AuthUser, branchId: string | null, input: ProductDto): Promise<ProductView> {
     const id = await runTx(this.db, async (tx) => {
+      const dto = await this.applyCurrency(tx, input);
       await this.validate(tx, dto);
       const { sku, variants } = await this.finalizeSkus(tx, dto);
       await this.assertCodesFree(tx, allCodes(sku, dto, variants));
       const productId = await this.repo.insertProduct(tx, toProductColumns(dto, sku));
       const ids = new Map<number, string>();
       if (dto.isVariable) {
-        const rows = await this.repo.insertVariants(tx, variants.map((v, i) => ({ productId, ...toVariantColumns(v, i) })));
+        const rows = await this.repo.insertVariants(tx, variants.map((v, i) => ({ productId, ...toVariantColumns(v, i, dto.priceCurrency === 'USD') })));
         rows.forEach((r, i) => ids.set(i, r));
       }
       await this.writeChildren(tx, productId, dto, dto.isVariable ? variants : [], ids);
@@ -170,11 +187,12 @@ export class CatalogService {
     return this.get(user, branchId, id);
   }
 
-  async update(user: AuthUser, branchId: string | null, id: string, dto: ProductDto): Promise<ProductView> {
+  async update(user: AuthUser, branchId: string | null, id: string, input: ProductDto): Promise<ProductView> {
     await runTx(this.db, async (tx) => {
       const old = await this.repo.findByIdForUpdate(tx, id);
       if (!old) throw notFound('Mahsulot');
-      assertVersion(old.version, dto.version, 'Mahsulot');
+      assertVersion(old.version, input.version, 'Mahsulot');
+      const dto = await this.applyCurrency(tx, input);
       await this.validate(tx, dto);
       const { sku, variants } = await this.finalizeSkus(tx, dto, id);
       await this.assertCodesFree(tx, allCodes(sku, dto, variants), id);
@@ -200,10 +218,10 @@ export class CatalogService {
       if (dto.isVariable) {
         for (const [i, v] of variants.entries()) {
           if (v.id && existing.some((e) => e.id === v.id)) {
-            await this.repo.updateVariant(tx, v.id, toVariantColumns(v, i));
+            await this.repo.updateVariant(tx, v.id, toVariantColumns(v, i, dto.priceCurrency === 'USD'));
             ids.set(i, v.id);
           } else {
-            const [newId] = await this.repo.insertVariants(tx, [{ productId: id, ...toVariantColumns(v, i) }]);
+            const [newId] = await this.repo.insertVariants(tx, [{ productId: id, ...toVariantColumns(v, i, dto.priceCurrency === 'USD') }]);
             ids.set(i, newId);
           }
         }

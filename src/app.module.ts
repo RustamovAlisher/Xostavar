@@ -21,6 +21,7 @@ import { SettingsModule } from './modules/settings/settings.module.js';
 import { ShiftsModule } from './modules/shifts/shifts.module.js';
 import { UsersModule } from './modules/users/users.module.js';
 import { HealthModule } from './modules/health/health.module.js';
+import { CurrencyModule } from './modules/currency/currency.module.js';
 
 @Module({
   imports: [
@@ -47,6 +48,7 @@ import { HealthModule } from './modules/health/health.module.js';
     DbModule,
     AuditModule,
     SettingsModule,
+    CurrencyModule,
     AuthModule,
     BranchesModule,
     UsersModule,

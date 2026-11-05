@@ -19,6 +19,8 @@ export class SaleLineDto {
 export class SalePaymentDto {
   @IsUUID() methodId: string;
   @IsInt() @Min(1) amount: number;
+  @ApiPropertyOptional({ description: "Dollar bilan to'langan bo'lsa — dollar summasi; `amount` uning so'mdagi qiymati (joriy kurs bo'yicha)" })
+  @IsOptional() @IsNumber({ maxDecimalPlaces: 2 }) @Min(0.01) amountUsd?: number;
   @IsOptional() @IsString() @MaxLength(100) ref?: string;
 }
 

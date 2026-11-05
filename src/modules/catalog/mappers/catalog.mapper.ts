@@ -18,6 +18,9 @@ export interface ProductView {
   costPrice?: number;
   stock: number;
   minStock?: number;
+  /** 'USD' — asl narx dollarda (`retailPriceUsd`), `retailPrice` joriy kurs bo'yicha so'm. */
+  priceCurrency: 'UZS' | 'USD';
+  retailPriceUsd?: number;
   isVariable: boolean;
   variants?: VariantView[];
   /** Joriy filial omborida bormi (stock_levels qatori). */
@@ -34,6 +37,7 @@ export interface VariantView {
   sku: string;
   barcodes: string[];
   retailPrice: number;
+  retailPriceUsd?: number;
   wholesalePrice?: number;
   costPrice?: number;
   stock: number;
@@ -77,6 +81,7 @@ export function toProductViews(rows: ProductRow[], ch: ProductChildren, withCost
       return {
         id: v.id, name: v.name, sku: v.sku, barcodes: vCodes.filter((b) => !b.unit).map((b) => b.barcode),
         retailPrice: vp?.retailPrice ?? v.retailPrice,
+        ...(p.priceCurrency === 'USD' && v.retailPriceUsd != null ? { retailPriceUsd: Number(v.retailPriceUsd) } : {}),
         ...(withCost ? { wholesalePrice: vp?.wholesalePrice ?? v.wholesalePrice ?? undefined, costPrice: vl?.costPrice != null ? Number(vl.costPrice) : undefined } : {}),
         stock: vl ? Number(vl.stock) : 0, minStock: vl?.minStock != null ? Number(vl.minStock) : undefined,
         conversions: vConvs.length ? convView(vConvs, vCodes) : undefined,
@@ -90,6 +95,8 @@ export function toProductViews(rows: ProductRow[], ch: ProductChildren, withCost
       ...(withCost ? { wholesalePrice: bp?.wholesalePrice ?? p.wholesalePrice ?? undefined, costPrice: l?.costPrice != null ? Number(l.costPrice) : undefined } : {}),
       stock: p.isVariable ? vs.reduce((a, v) => a + v.stock, 0) : l ? Number(l.stock) : 0,
       minStock: l?.minStock != null ? Number(l.minStock) : undefined,
+      priceCurrency: p.priceCurrency,
+      ...(p.priceCurrency === 'USD' && p.retailPriceUsd != null ? { retailPriceUsd: Number(p.retailPriceUsd) } : {}),
       isVariable: p.isVariable, variants: p.isVariable ? vs : undefined, inBranch, version: p.version, createdAt: p.createdAt,
       imageUrl: uploadUrl(p.imagePath), thumbUrl: uploadUrl(p.thumbPath),
     };
@@ -101,11 +108,16 @@ export function toProductColumns(dto: ProductDto, sku: string) {
   return {
     name: dto.name.trim(), categoryId: dto.categoryId, sku, description: dto.description?.trim() || null, baseUnit: dto.baseUnit, isDivisible: dto.isDivisible,
     retailPrice: dto.isVariable ? 0 : (dto.retailPrice ?? 0), wholesalePrice: dto.isVariable ? null : (dto.wholesalePrice ?? null), isVariable: dto.isVariable,
+    priceCurrency: dto.priceCurrency ?? 'UZS',
+    retailPriceUsd: dto.priceCurrency === 'USD' && !dto.isVariable ? (dto.retailPriceUsd ?? 0) : null,
   };
 }
 
 /** DTO dan `product_variants` qatori ustunlari; `i` — tartib. */
-export const toVariantColumns = (v: VariantDto, i: number) => ({ name: v.name.trim(), sku: v.sku!, retailPrice: v.retailPrice, wholesalePrice: v.wholesalePrice ?? null, sortOrder: i });
+export const toVariantColumns = (v: VariantDto, i: number, usd = false) => ({
+  name: v.name.trim(), sku: v.sku!, retailPrice: v.retailPrice, wholesalePrice: v.wholesalePrice ?? null, sortOrder: i,
+  retailPriceUsd: usd ? (v.retailPriceUsd ?? 0) : null,
+});
 
 /** Barcha kodlar (SKU, shtrix-kod, qadoq shtrix-kodi) — unikallik tekshiruvi uchun. */
 export function allCodes(sku: string, dto: ProductDto, variants: VariantDto[]) {
@@ -133,6 +145,7 @@ export function productSummary(dto: ProductDto, sku: string) {
   return {
     nomi: dto.name, sku, kategoriya: dto.categoryId, asosiyBirlik: dto.baseUnit,
     narx: dto.isVariable ? undefined : dto.retailPrice,
+    ...(dto.priceCurrency === 'USD' ? { valyuta: 'USD', narxUsd: dto.isVariable ? undefined : dto.retailPriceUsd } : {}),
     birliklar: (dto.conversions ?? []).map((c) => `${c.unit}=${c.factor}${c.price ? ` (${c.price})` : ''}`).join(', '),
     variantlar: dto.variants?.map((v) => `${v.name}: ${v.retailPrice}`).join('; '),
   };

@@ -64,6 +64,13 @@
       "when": 1793503855537,
       "tag": "0008_product_image",
       "breakpoints": true
+    },
+    {
+      "idx": 9,
+      "version": "7",
+      "when": 1793897260125,
+      "tag": "0009_usd_currency",
+      "breakpoints": true
     }
   ]
 }

@@ -7,6 +7,7 @@ import { dayKey, qty4 } from '../../../common/utils/numbers.js';
 import { page } from '../../../common/utils/pagination.js';
 import { calcLine, factorOf, priceOf } from '../../../common/utils/pricing.js';
 import { AuditService } from '../../audit/services/audit.service.js';
+import { CurrencyService } from '../../currency/services/currency.service.js';
 import { CustomersService } from '../../customers/services/customers.service.js';
 import { InventoryService } from '../../inventory/services/inventory.service.js';
 import { SettingsService } from '../../settings/services/settings.service.js';
@@ -32,6 +33,7 @@ export class SalesService {
     private readonly customers: CustomersService,
     private readonly settings: SettingsService,
     private readonly shifts: ShiftsService,
+    private readonly currency: CurrencyService,
   ) {}
 
   /** Hammasini yoki faqat o'z cheklarini ko'rish (TZ 9.6). */
@@ -141,8 +143,18 @@ export class SalesService {
         if (!m) throw notFound("To'lov usuli", { methodId: p.methodId });
         if (!m.enabled) throw unprocessable('payment_method_disabled', `"${m.label}" usuli o'chirilgan`);
         if (m.kind === 'debt') throw unprocessable('validation_failed', "Nasiya to'lov qismi sifatida kiritilmaydi — onCredit=true yuboring");
-        return { m, amount: Math.round(p.amount), ref: p.ref?.trim() || null };
+        return { m, amount: Math.round(p.amount), amountUsd: p.amountUsd ?? null, ref: p.ref?.trim() || null };
       });
+      // Dollar to'lov: so'm qiymati joriy kursga mos bo'lishi kerak (kassa ochiq turganda kurs yangilansa — 2 % gacha farqqa ruxsat)
+      const usdRate = await this.currency.currentRate(tx);
+      for (const p of pays) {
+        if (p.amountUsd == null) continue;
+        if (!usdRate) throw unprocessable('validation_failed', "Dollar kursi kiritilmagan — dollar bilan to'lov qabul qilib bo'lmaydi");
+        const expected = p.amountUsd * usdRate;
+        if (Math.abs(expected - p.amount) > Math.max(1_000, expected * 0.02)) {
+          throw unprocessable('validation_failed', `Dollar to'lov ${p.amountUsd} $ joriy kurs bo'yicha ${Math.round(expected).toLocaleString('ru-RU')} so'm — sahifani yangilab qayta urinib ko'ring`, { usdRate });
+        }
+      }
       if (new Set(pays.map((p) => p.m.id)).size !== pays.length) throw unprocessable('validation_failed', 'Bitta usul ikki marta kiritilgan');
       const paid = pays.reduce((a, p) => a + p.amount, 0);
       if (paid > q.total) throw unprocessable('validation_failed', `To'lovlar yig'indisi (${paid.toLocaleString('ru-RU')}) chek summasidan katta`);
@@ -162,9 +174,10 @@ export class SalesService {
       const saleId = await this.repo.insertSale(tx, {
         branchId, number, type: 'sale', shiftId, cashierId: user.id, cashierName: user.name, customerId: customer?.id ?? null, customerName: customer?.name ?? 'Oddiy mijoz',
         paymentSummary, subtotal: q.subtotal, discountAmount: q.discount, totalAmount: q.total, paidAmount: paid, remainingDebt: remaining, profit: q.profit, clientId: dto.clientId ?? null,
+        usdRate,
       });
       await this.repo.insertLines(tx, q.lines.map((l, i) => ({ saleId, productId: l.productId, variantId: l.variantId, name: l.name, variantName: l.variantName, sku: l.sku, categoryId: l.categoryId, unit: l.unit, qty: l.qty, baseQty: l.baseQty, unitPrice: l.unitPrice, lineTotal: l.lineTotal, costPerBase: l.costPerBase, cuts: l.cuts ?? null, sortOrder: i })));
-      if (pays.length) await this.repo.insertPayments(tx, pays.map((p) => ({ saleId, methodId: p.m.id, methodCode: p.m.code, kind: p.m.kind, amount: p.amount, ref: p.ref })));
+      if (pays.length) await this.repo.insertPayments(tx, pays.map((p) => ({ saleId, methodId: p.m.id, methodCode: p.m.code, kind: p.m.kind, amount: p.amount, amountUsd: p.amountUsd, ref: p.ref })));
       // Qoldiqni ayirish (qulflangan qatorlar)
       for (const [key, need] of q.need) {
         const lvl = q.levels.get(key)!;

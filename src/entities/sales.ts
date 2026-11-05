@@ -69,6 +69,8 @@ export const sales = pgTable(
     voidReason: text('void_reason'),
     /** Oflayn yaratilgan chek id si (idempotentlik, TZ 10). */
     clientId: uuid('client_id'),
+    /** Sotuv paytidagi USD kursi (chekda $ ekvivalenti va dollar to'lovlar uchun). */
+    usdRate: numeric('usd_rate', { precision: 14, scale: 2, mode: 'number' }),
     createdAt: createdAt(),
   },
   (t) => [
@@ -126,6 +128,8 @@ export const salePayments = pgTable(
     methodCode: text('method_code').notNull(),
     kind: text('kind').notNull(),
     amount: money('amount').notNull(),
+    /** Dollar bilan to'langan bo'lsa — dollar summasi (`amount` — uning so'mdagi qiymati). */
+    amountUsd: numeric('amount_usd', { precision: 14, scale: 2, mode: 'number' }),
     ref: text('ref'),
   },
   (t) => [index('sale_payments_sale_idx').on(t.saleId)],

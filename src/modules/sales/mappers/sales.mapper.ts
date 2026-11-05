@@ -40,7 +40,7 @@ export function toSaleView(s: SaleRow, lines: SaleLineRow[], pays: SalePaymentRo
   return {
     ...s, ...(withCost ? {} : { profit: undefined }),
     lines: lines.map((l) => ({ ...l, qty: Number(l.qty), baseQty: Number(l.baseQty), costPerBase: withCost && l.costPerBase != null ? Number(l.costPerBase) : undefined })),
-    payments: pays.map((p) => ({ method: p.methodCode, methodId: p.methodId, kind: p.kind, amount: p.amount, ref: p.ref })),
+    payments: pays.map((p) => ({ method: p.methodCode, methodId: p.methodId, kind: p.kind, amount: p.amount, ...(p.amountUsd != null ? { amountUsd: Number(p.amountUsd) } : {}), ref: p.ref })),
   };
 }
 

@@ -1,6 +1,6 @@
 import { ApiPropertyOptional } from '@nestjs/swagger';
 import { Type } from 'class-transformer';
-import { ArrayMaxSize, IsArray, IsBoolean, IsInt, IsNumber, IsOptional, IsString, IsUUID, Matches, MaxLength, Min, MinLength, ValidateNested } from 'class-validator';
+import { ArrayMaxSize, IsArray, IsBoolean, IsIn, IsInt, IsNumber, IsOptional, IsString, IsUUID, Matches, MaxLength, Min, MinLength, ValidateNested } from 'class-validator';
 import { PageQuery } from '../../../common/utils/pagination.js';
 
 export class ConversionDto {
@@ -16,6 +16,8 @@ export class VariantDto {
   @IsOptional() @IsString() @MaxLength(60) sku?: string;
   @IsOptional() @IsArray() @ArrayMaxSize(10) @IsString({ each: true }) barcodes?: string[];
   @IsInt() @Min(0) retailPrice: number;
+  @ApiPropertyOptional({ description: "Mahsulot priceCurrency='USD' bo'lsa — narx dollarda; retailPrice server tomonidan kurs bo'yicha hisoblanadi" })
+  @IsOptional() @IsNumber({ maxDecimalPlaces: 2 }) @Min(0) retailPriceUsd?: number | null;
   @IsOptional() @IsInt() @Min(0) wholesalePrice?: number | null;
   @IsOptional() @IsArray() @ValidateNested({ each: true }) @Type(() => ConversionDto) conversions?: ConversionDto[];
   @ApiPropertyOptional({ description: 'Joriy filial uchun kam qoldiq chegarasi (faqat omborda bor variant uchun)' }) @IsOptional() @IsNumber() @Min(0) minStock?: number | null;
@@ -33,6 +35,9 @@ export class ProductDto {
   @IsArray() @ValidateNested({ each: true }) @Type(() => ConversionDto) conversions: ConversionDto[];
   @ApiPropertyOptional({ description: 'Variantsiz mahsulot narxi; 0 = sotilmaydi' }) @IsOptional() @IsInt() @Min(0) retailPrice?: number;
   @IsOptional() @IsInt() @Min(0) wholesalePrice?: number | null;
+  @ApiPropertyOptional({ enum: ['UZS', 'USD'], description: "USD — narx dollarda saqlanadi, so'm narxi kurs o'zgarganda avtomatik qayta hisoblanadi" })
+  @IsOptional() @IsIn(['UZS', 'USD']) priceCurrency?: 'UZS' | 'USD';
+  @IsOptional() @IsNumber({ maxDecimalPlaces: 2 }) @Min(0) retailPriceUsd?: number | null;
   @IsBoolean() isVariable: boolean;
   @IsOptional() @IsArray() @ArrayMaxSize(200) @ValidateNested({ each: true }) @Type(() => VariantDto) variants?: VariantDto[];
   @ApiPropertyOptional({ description: 'Joriy filial uchun kam qoldiq chegarasi (stock_levels)' }) @IsOptional() @IsNumber() @Min(0) minStock?: number | null;
