@@ -6,7 +6,7 @@ import { unprocessable } from '../../../common/errors/app-error.js';
 import { AuditService } from '../../audit/services/audit.service.js';
 import { toRateView, type CurrentRateView, type RateView } from '../mappers/currency.mapper.js';
 import { CurrencyRepository } from '../repositories/currency.repository.js';
-import { CbuClient } from './cbu.client.js';
+import { CbuClient, MarketRateClient, type CbuRate } from './cbu.client.js';
 
 /** Avtomatik tortish vaqtlari, Toshkent (UTC+5, yozgi vaqt yo'q). */
 export const AUTO_FETCH_TIMES = ['07:00', '12:00'] as const;
@@ -42,6 +42,13 @@ export function lastAutoFetch(now = new Date()): Date {
 }
 
 /** So'm qiymati: dollar × kurs, `USD_ROUND_TO` so'mgacha yaxlitlab. */
+/** Brauzer yuborgan Markaziy bank kursi xalqaro bozor kursidan shuncha farq qilsa qabul qilinmaydi. */
+const REPORT_MAX_MARKET_DIFF = 0.03;
+/** Bozor kursi olinmasa — oxirgi kursdan shuncha farq qilsa qabul qilinmaydi. */
+const REPORT_MAX_PREV_DIFF = 0.1;
+
+const tashkentDate = (d = new Date()) => new Date(d.getTime() + TZ_OFFSET_MS).toISOString().slice(0, 10);
+
 export const usdToUzs = (usd: number, rate: number) => Math.round((usd * rate) / USD_ROUND_TO) * USD_ROUND_TO;
 
 /**
@@ -53,12 +60,15 @@ export class CurrencyService {
   private readonly logger = new Logger('Currency');
   private lastCheckAt?: Date;
   private lastError?: string;
+  /** Markaziy bank kursi oxirgi marta muvaffaqiyatli olingan payt (server yoki brauzer orqali, o'zgarmagan bo'lsa ham). */
+  private lastCbuOkAt?: Date;
 
   constructor(
     @Inject(DB) private readonly db: Db,
     private readonly repo: CurrencyRepository,
     private readonly cbu: CbuClient,
     private readonly audit: AuditService,
+    private readonly market: MarketRateClient,
   ) {}
 
   /** Joriy USD kursi (so'm); hali hech qachon kiritilmagan bo'lsa null. */
@@ -74,14 +84,27 @@ export class CurrencyService {
     return r;
   }
 
+  /**
+   * Oxirgi avtomatik moment (07:00/12:00) dan beri Markaziy bank kursi olinmaganmi. Server cbu.uz ga ulana olmasa
+   * (xorijiy IP) shu bayroq bilan ochiq turgan ilova kursni brauzerdan tortib yuboradi.
+   */
+  async cbuDue(now = new Date()): Promise<boolean> {
+    const since = lastAutoFetch(now).getTime();
+    if (this.lastCbuOkAt && this.lastCbuOkAt.getTime() >= since) return false;
+    const last = await this.repo.latestFromCbu('USD');
+    return !last || last.createdAt.getTime() < since;
+  }
+
   async current(): Promise<CurrentRateView> {
     const r = await this.repo.latest('USD');
+    const due = await this.cbuDue();
     return {
       current: r ? toRateView(r) : null,
+      cbuDue: due,
       nextAutoAt: nextAutoFetch().toISOString(),
       schedule: [...AUTO_FETCH_TIMES],
       ...(this.lastCheckAt ? { lastCheckAt: this.lastCheckAt.toISOString() } : {}),
-      ...(this.lastError ? { lastError: this.lastError } : {}),
+      ...(this.lastError && due ? { lastError: this.lastError } : {}),
       roundTo: USD_ROUND_TO,
     };
   }
@@ -119,19 +142,52 @@ export class CurrencyService {
       this.logger.warn(`Markaziy bank kursini olib bo'lmadi: ${this.lastError}`);
       throw unprocessable('validation_failed', `Markaziy bank kursini olib bo'lmadi: ${this.lastError}`);
     }
+    return this.storeCbu(fetched, user);
+  }
+
+  private storeCbu(fetched: CbuRate, user: AuthUser | null, via = '') {
     return runTx(this.db, async (tx) => {
       const latest = await this.repo.latest('USD', tx);
+      const latestCbu = latest?.source === 'cbu' ? latest : await this.repo.latestFromCbu('USD', tx);
+      this.lastCbuOkAt = new Date();
+      this.lastError = undefined;
       if (latest && latest.source === 'cbu' && Number(latest.rate) === fetched.rate && latest.rateDate === fetched.date) {
         return { changed: false, updatedProducts: 0, current: toRateView(latest) };
       }
+      // Eski sanali kurs (brauzer keshi va h.k.) yangi Markaziy bank kursini bosib ketmasin
+      if (latestCbu && fetched.date < latestCbu.rateDate && latest) {
+        return { changed: false, updatedProducts: 0, current: toRateView(latest) };
+      }
       const { row, updated } = await this.apply(tx, fetched.rate, fetched.date, 'cbu', user);
-      this.logger.log(`USD kursi: ${fetched.rate} (${fetched.date}), ${updated} ta mahsulot qayta hisoblandi`);
+      this.logger.log(`USD kursi${via}: ${fetched.rate} (${fetched.date}), ${updated} ta mahsulot qayta hisoblandi`);
       return { changed: true, updatedProducts: updated, current: toRateView(row) };
     });
   }
 
+  /**
+   * Brauzer cbu.uz dan olib yuborgan kurs. Har qanday xodim yubora oladi, shuning uchun: navbat kelmagan bo'lsa
+   * (admin emas) e'tiborsiz qoldiriladi; sana kelajakda bo'lmasligi va kurs bozor kursiga yaqin bo'lishi shart.
+   */
+  async reportFromBrowser(user: AuthUser, fetched: CbuRate) {
+    const rate = Math.round(fetched.rate * 100) / 100;
+    const latest = await this.repo.latest('USD');
+    if (!(await this.cbuDue()) && !user.permissions.includes('manage_settings')) {
+      return { changed: false, updatedProducts: 0, current: latest ? toRateView(latest) : null };
+    }
+    const tomorrow = tashkentDate(new Date(Date.now() + 86_400_000));
+    if (fetched.date > tomorrow) throw unprocessable('validation_failed', 'Kurs sanasi noto\'g\'ri');
+    const market = await this.market.fetchUsdUzs();
+    const ref = market ?? (latest ? Number(latest.rate) : null);
+    const maxDiff = market ? REPORT_MAX_MARKET_DIFF : REPORT_MAX_PREV_DIFF;
+    if (ref && Math.abs(rate - ref) / ref > maxDiff) {
+      this.logger.warn(`Brauzer kursi rad etildi: ${rate} (tekshiruv ${ref}), ${user.username}`);
+      throw unprocessable('validation_failed', `Kurs ishonchsiz: ${rate} (kutilgan ≈ ${Math.round(ref)})`);
+    }
+    return this.storeCbu({ rate, date: fetched.date }, user, ' (brauzer orqali)');
+  }
+
   async setManual(user: AuthUser, rate: number): Promise<{ updatedProducts: number; current: RateView }> {
-    const today = new Date(Date.now() + TZ_OFFSET_MS).toISOString().slice(0, 10);
+    const today = tashkentDate();
     return runTx(this.db, async (tx) => {
       const { row, updated } = await this.apply(tx, Math.round(rate * 100) / 100, today, 'manual', user);
       return { updatedProducts: updated, current: toRateView(row) };

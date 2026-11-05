@@ -1,7 +1,7 @@
 import { Body, Controller, Get, HttpCode, Post, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { CurrentUser, Perms, type AuthUser } from '../../../common/decorators/auth-context.js';
-import { ManualRateDto, RateHistoryQuery } from '../dto/currency.dto.js';
+import { CbuReportDto, ManualRateDto, RateHistoryQuery } from '../dto/currency.dto.js';
 import { CurrencyService } from '../services/currency.service.js';
 
 @ApiTags('currency')
@@ -27,6 +27,13 @@ export class CurrencyController {
   @Perms('manage_settings')
   refresh(@CurrentUser() u: AuthUser) {
     return this.currency.refreshFromCbu(u);
+  }
+
+  /** Brauzer orqali olingan Markaziy bank kursi — har bir xodim (navbat kelganda); server tekshiradi. */
+  @Post('cbu-report')
+  @HttpCode(200)
+  report(@CurrentUser() u: AuthUser, @Body() dto: CbuReportDto) {
+    return this.currency.reportFromBrowser(u, dto);
   }
 
   /** Qo'lda kurs (keyingi avtomatik yangilanishgacha amal qiladi). */

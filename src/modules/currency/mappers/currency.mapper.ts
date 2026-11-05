@@ -12,6 +12,8 @@ export interface RateView {
 /** GET /currency/usd javobi: joriy kurs + avtomatik yangilanish holati. */
 export interface CurrentRateView {
   current: RateView | null;
+  /** Oxirgi avtomatik momentdan beri Markaziy bank kursi olinmagan — ilova uni brauzerdan tortib yuborishi kerak. */
+  cbuDue: boolean;
   /** Keyingi avtomatik tortish vaqti (ISO, Toshkent 07:00 yoki 12:00). */
   nextAutoAt: string;
   /** Avtomatik tortish jadvali (Toshkent vaqti). */

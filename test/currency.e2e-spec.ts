@@ -1,4 +1,5 @@
 import { INestApplication } from '@nestjs/common';
+import { MarketRateClient } from '../src/modules/currency/services/cbu.client.js';
 import { code, createApp, ensureShift, seeded, uniq, type Client, type Seeded } from './helpers.js';
 
 /** Dollar kursi: qo'lda kiritish, dollar narxli mahsulot, kurs o'zgarganda qayta hisoblash, dollar to'lov. */
@@ -75,5 +76,30 @@ describe('currency (USD)', () => {
     expect(ok.body.payments[0]).toMatchObject({ amount: 120_000, amountUsd: 10 });
     const bad = await c.post('/sales', { lines: [{ productId: prod.id, unit: 'piece', qty: 1 }], payments: [{ methodId: s.methods.cash, amount: 120_000, amountUsd: 5 }] });
     expect(code(bad)).toBe('validation_failed');
+  });
+
+  it("brauzer orqali Markaziy bank kursi: navbat kelganda har kim yuboradi, bozor kursidan uzoq bo'lsa rad etiladi", async () => {
+    const market = vi.spyOn(MarketRateClient.prototype, 'fetchUsdUzs').mockResolvedValue(12_000);
+    try {
+      const today = new Date(Date.now() + 5 * 3600_000).toISOString().slice(0, 10);
+      const before = (await s.kassir.get('/currency/usd')).body;
+      if (before.cbuDue) {
+        const r = await s.kassir.post('/currency/usd/cbu-report', { rate: 12_050.37, date: today });
+        expect(r.status).toBe(200);
+        expect(r.body.current).toMatchObject({ rate: 12_050.37, source: 'cbu', rateDate: today });
+      }
+      expect((await s.kassir.get('/currency/usd')).body.cbuDue).toBe(false);
+      // Navbat kelmagan — kassir yuborgani e'tiborsiz (spam / eski tab himoyasi)
+      const again = await s.kassir.post('/currency/usd/cbu-report', { rate: 12_100, date: today });
+      expect(again.status).toBe(200);
+      expect(again.body.changed).toBe(false);
+      // Admin har doim yubora oladi, lekin tekshiruvdan o'tishi kerak
+      expect(code(await c.post('/currency/usd/cbu-report', { rate: 15_000, date: today }))).toBe('validation_failed');
+      expect(code(await c.post('/currency/usd/cbu-report', { rate: 12_000, date: '2099-01-01' }))).toBe('validation_failed');
+      const ok = await c.post('/currency/usd/cbu-report', { rate: 12_010, date: today });
+      expect(ok.body).toMatchObject({ changed: true, current: { rate: 12_010, source: 'cbu' } });
+    } finally {
+      market.mockRestore();
+    }
   });
 });

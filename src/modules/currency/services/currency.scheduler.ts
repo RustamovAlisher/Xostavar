@@ -48,6 +48,8 @@ export class CurrencyScheduler implements OnApplicationBootstrap, OnApplicationS
   private async run(attempt: number) {
     if (this.stopped) return;
     try {
+      // Qayta urinishdan oldin: kurs bu orada brauzer orqali kelgan bo'lsa server cbu.uz ga qayta urinmaydi
+      if (attempt > 0 && !(await this.currency.cbuDue())) return this.scheduleNext();
       await this.currency.refreshFromCbu(null);
       this.scheduleNext();
     } catch {
