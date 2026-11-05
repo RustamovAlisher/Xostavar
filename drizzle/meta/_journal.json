@@ -71,6 +71,13 @@
       "when": 1793897260125,
       "tag": "0009_usd_currency",
       "breakpoints": true
+    },
+    {
+      "idx": 10,
+      "version": "7",
+      "when": 1793909097468,
+      "tag": "0010_telegram_bot",
+      "breakpoints": true
     }
   ]
 }

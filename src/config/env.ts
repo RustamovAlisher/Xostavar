@@ -22,6 +22,18 @@ const schema = z.object({
     .transform((s) => s === 'true' || s === '1'),
   /** Yuklangan fayllar (mahsulot rasmlari) papkasi; `/api/v1/uploads/` orqali tarqatiladi. */
   UPLOAD_DIR: z.string().default('./uploads'),
+  /** Telegram bot tokeni (zaxira xizmati bilan umumiy bo'lishi mumkin). */
+  TELEGRAM_BOT_TOKEN: z.string().optional(),
+  /**
+   * Savdo boti (har sotuv xabari, 21:00 hisobot, tugmalar). Bitta token bilan faqat BITTA muhitda yoqing —
+   * ikki server bir botdan `getUpdates` qilsa Telegram 409 qaytaradi.
+   */
+  SALES_BOT_ENABLED: z
+    .string()
+    .default('false')
+    .transform((s) => s === 'true' || s === '1'),
+  /** Kun yakuni hisoboti vaqti (Toshkent), HH:MM. */
+  SALES_BOT_DAILY_AT: z.string().regex(/^([01]\d|2[0-3]):[0-5]\d$/, 'HH:MM formatida').default('21:00'),
 });
 
 export type Env = z.infer<typeof schema>;

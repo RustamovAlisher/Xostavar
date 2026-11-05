@@ -22,6 +22,7 @@ import { ShiftsModule } from './modules/shifts/shifts.module.js';
 import { UsersModule } from './modules/users/users.module.js';
 import { HealthModule } from './modules/health/health.module.js';
 import { CurrencyModule } from './modules/currency/currency.module.js';
+import { TelegramModule } from './modules/telegram/telegram.module.js';
 
 @Module({
   imports: [
@@ -49,6 +50,7 @@ import { CurrencyModule } from './modules/currency/currency.module.js';
     AuditModule,
     SettingsModule,
     CurrencyModule,
+    TelegramModule,
     AuthModule,
     BranchesModule,
     UsersModule,

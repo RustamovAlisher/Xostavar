@@ -8,6 +8,7 @@ import { page } from '../../../common/utils/pagination.js';
 import { calcLine, factorOf, priceOf } from '../../../common/utils/pricing.js';
 import { AuditService } from '../../audit/services/audit.service.js';
 import { CurrencyService } from '../../currency/services/currency.service.js';
+import { NotifyService } from '../../telegram/services/notify.service.js';
 import { CustomersService } from '../../customers/services/customers.service.js';
 import { InventoryService } from '../../inventory/services/inventory.service.js';
 import { SettingsService } from '../../settings/services/settings.service.js';
@@ -34,6 +35,7 @@ export class SalesService {
     private readonly settings: SettingsService,
     private readonly shifts: ShiftsService,
     private readonly currency: CurrencyService,
+    private readonly notify: NotifyService,
   ) {}
 
   /** Hammasini yoki faqat o'z cheklarini ko'rish (TZ 9.6). */
@@ -193,6 +195,7 @@ export class SalesService {
         action: 'sale', module: 'Kassa', targetId: saleId, targetName: `Chek ${number} · ${customer?.name ?? 'Oddiy mijoz'}`, branchId, requestId,
         details: remaining > 0 ? `Nasiya: jami ${q.total.toLocaleString('ru-RU')} so'm (${paid.toLocaleString('ru-RU')} to'landi + ${remaining.toLocaleString('ru-RU')} qarz)` : `Sotuv: ${q.total.toLocaleString('ru-RU')} so'm${q.discount ? `, chegirma ${q.discount.toLocaleString('ru-RU')}` : ''}${pays.length > 1 ? " (aralash to'lov)" : ''}`,
       }, tx);
+      await this.notify.enqueue(tx, 'sale', saleId, branchId);
       return saleId;
     });
   }
@@ -220,6 +223,7 @@ export class SalesService {
       await this.repo.updateSale(tx, saleId, { customerName: r.customer.name, customerDebtAfter: r.after });
       await this.repo.insertPayments(tx, [{ saleId, methodId: m.id, methodCode: m.code, kind: m.kind, amount }]);
       await this.audit.log(user, { action: 'debt_payment', module: 'Nasiya / Qarz', targetId: customerId, targetName: r.customer.name, branchId, requestId, details: `To'lov: ${amount.toLocaleString('ru-RU')} so'm (${m.label.toLowerCase()}), qoldiq ${r.after.toLocaleString('ru-RU')} so'm` }, tx);
+      await this.notify.enqueue(tx, 'debt_payment', saleId, branchId);
       return saleId;
     });
     return this.get(user, id);
@@ -254,6 +258,7 @@ export class SalesService {
       await this.repo.updateSale(tx, id, { status: 'voided', voidedAt: new Date(), voidedBy: user.id, voidedByName: user.name, voidReason: reason.trim() });
       await this.shifts.refreezeIfClosed(tx, s.shiftId);
       await this.audit.log(user, { action: 'sale_void', module: 'Kassa', targetId: id, targetName: `Chek ${s.number} · ${s.customerName}`, branchId, requestId, details: `Bekor qilindi: ${s.totalAmount.toLocaleString('ru-RU')} so'm${debtNote}. Sabab: ${reason.trim()}` }, tx);
+      await this.notify.enqueue(tx, 'void', id, branchId);
     });
     return this.get(user, id);
   }

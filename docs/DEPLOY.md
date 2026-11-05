@@ -51,6 +51,15 @@ Kodni yangilang (git pull yoki rsync), so'ng `SKIP_PULL=1 ./deploy.sh`
 yetishmayotganini qo'shadi, noto'g'ri koeffitsientni tuzatadi, eski seed namunalarini olib tashlaydi; foydalanuvchi kiritgan mahsulotlar va narxlar saqlanadi.
 Avval `--apply` siz ishga tushiring (hisobot), keyin `--apply`.
 
+## Telegram savdo boti
+- Yoqish: env faylda `SALES_BOT_ENABLED=1` (token — `TELEGRAM_BOT_TOKEN`), so'ng `./demo.sh update` yoki `SKIP_PULL=1 ./deploy.sh`.
+  Bitta token bilan **faqat bitta muhitda** yoqing (ikki server bir botdan `getUpdates` qilsa — 409, Sozlamalarda ogohlantirish chiqadi).
+- Chat ulash: ilovada **Sozlamalar → Telegram bot → Chat ulash** → havola yoki chatga `/start KOD` (kod 15 daqiqa, bir martalik).
+  Guruh uchun botni guruhga qo'shib, guruhga `/start KOD` yozing. Har chat uchun filial, minimal summa va xabar turlari alohida.
+- Xabarlar `notification_outbox` navbati orqali ketadi: Telegram ishlamasa kassa to'xtamaydi, keyin qayta urinadi (7 marta, 30 daqiqagacha).
+- Kun yakuni `SALES_BOT_DAILY_AT` (standart 21:00, Toshkent) da; server shu paytda o'chiq bo'lsa — yonganda bir marta yuboriladi.
+- Bot buyruqlari: `/bugun`, `/kecha`, `/cheklar`, `/excel`, `/menu` (va xabar ostidagi tugmalar).
+
 ## Foydali buyruqlar
 ```
 docker compose --env-file .env.prod -f docker-compose.prod.yml ps
