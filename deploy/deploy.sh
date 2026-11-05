@@ -4,12 +4,21 @@
 set -euo pipefail
 cd "$(dirname "$0")"
 
-# Standart: production (.env.prod, loyiha xostavar). Demo: ENV_FILE=.env.demo PROJECT=xostavar-demo SERVICES="postgres redis backend frontend"
-ENV_FILE="${ENV_FILE:-.env.prod}"; PROJECT="${PROJECT:-xostavar}"; SERVICES="${SERVICES:-}"
+# Standart: production (.env.prod, loyiha xostavar). Demo: ENV_FILE=.env.demo PROJECT=xostavar-demo (demo.sh shunday chaqiradi)
+ENV_FILE="${ENV_FILE:-.env.prod}"; PROJECT="${PROJECT:-xostavar}"
 export ENV_FILE
 [ -f "$ENV_FILE" ] || { echo "deploy/$ENV_FILE yo'q — .env.prod.example dan nusxa olib to'ldiring"; exit 1; }
 
 FILES=(-p "$PROJECT" --env-file "$ENV_FILE" -f docker-compose.prod.yml)
+
+# Zaxira xizmati faqat env faylda BACKUP_ENABLED=1 bo'lsa ishlaydi (hozir demo'da yoqilgan, production'da o'chiq)
+SERVICES="postgres redis backend frontend"
+if grep -qE '^BACKUP_ENABLED=1' "$ENV_FILE"; then
+  SERVICES="$SERVICES backup"; echo "zaxira xizmati: yoqilgan"
+else
+  echo "zaxira xizmati: o'chiq"
+  docker compose "${FILES[@]}" rm -sf backup >/dev/null 2>&1 || true   # ilgari ishlab turgan bo'lsa to'xtatib o'chiramiz
+fi
 
 echo "== Kod yangilanmoqda"
 # SKIP_PULL=1 — kod rsync bilan yuborilgan bo'lsa (git ishlatilmaydi)

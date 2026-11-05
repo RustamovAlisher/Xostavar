@@ -1,4 +1,4 @@
-# Ishlab chiqarish: postgres + redis + backend + frontend(nginx) + kunlik zaxira.
+# Ishlab chiqarish: postgres + redis + backend + frontend(nginx) + kunlik zaxira (BACKUP_ENABLED=1 bo'lgan muhitda).
 # Ishga tushirish (backend/deploy ichida):  docker compose --env-file .env.prod -f docker-compose.prod.yml up -d --build
 # HTTPS: serverdagi Nginx + certbot orqali (nginx-site.conf.example), konteyner faqat 127.0.0.1 da ochiladi
 # Frontend repo backend bilan yonma-yon bo'lishi kerak: ../../frontend
@@ -65,7 +65,7 @@ services:
       - '127.0.0.1:${HTTP_PORT:-8700}:80'
 
   # Zaxira: har kuni BACKUP_TIMES soatlarida (Toshkent) pg_dump → ./backups (+ Telegram), BACKUP_KEEP_DAYS kundan eskisi o'chiriladi.
-  # Qo'lda: ./backup-now.sh
+  # Faqat env faylda BACKUP_ENABLED=1 bo'lgan muhitda ishga tushadi (deploy.sh/demo.sh hal qiladi). Qo'lda: ./backup-now.sh
   backup:
     image: postgres:16-alpine
     restart: unless-stopped
@@ -74,6 +74,7 @@ services:
       DB_NAME: ${DB_NAME:-xostavar}
       DB_USER: ${DB_USER:-xostavar}
       KEEP_DAYS: ${BACKUP_KEEP_DAYS:-14}
+      BACKUP_NAME: ${BACKUP_NAME:-xostavar}
       BACKUP_TIMES: ${BACKUP_TIMES:-14:00 22:00}
       TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
       TELEGRAM_CHAT_ID: ${TELEGRAM_CHAT_ID:-}
@@ -88,7 +89,7 @@ services:
     command:
       - |
         apk add --no-cache -q curl >/dev/null 2>&1 || echo "curl o'rnatilmadi — Telegram ishlamaydi"
-        echo "zaxira vaqtlari: $$BACKUP_TIMES (Asia/Tashkent); telegram: $${TELEGRAM_CHAT_ID:+yoqilgan}$${TELEGRAM_CHAT_ID:-o'chiq}"
+        echo "zaxira nomi: $$BACKUP_NAME; vaqtlari: $$BACKUP_TIMES (Asia/Tashkent); telegram: $${TELEGRAM_CHAT_ID:+yoqilgan}$${TELEGRAM_CHAT_ID:-o'chiq}" | sed 's/yoqilgan.*/yoqilgan/'
         last=""
         while true; do
           now=$$(date +%H:%M); today=$$(date +%Y%m%d)

@@ -27,11 +27,12 @@ Kodni yangilang (git pull yoki rsync), so'ng `SKIP_PULL=1 ./deploy.sh`
 (yangilashdan oldin avtomatik zaxira olinadi, migratsiyalar ishga tushganda qo'llanadi).
 
 ## Zaxira va tiklash
-- `backup` xizmati har kuni `BACKUP_TIMES` soatlarida (standart 14:00 va 22:00, Toshkent) `deploy/backups/*.dump` ga yozadi, `BACKUP_KEEP_DAYS` kundan eskisini o'chiradi.
-- Server tashqarisiga nusxa: lokal kompyuterda `deploy/pull-backups.sh` (rsync bilan `~/xostavar-zaxira/` ga tortadi).
-- Telegram: `.env.prod` da `TELEGRAM_BOT_TOKEN` va `TELEGRAM_CHAT_ID` to'ldirilsa har zaxira guruhga fayl bo'lib boradi, xatoda ogohlantirish keladi.
-- Qo'lda darhol zaxira: `./backup-now.sh`.
-- Tiklash: `./restore.sh backups/<fayl>.dump`.
+- `backup` xizmati faqat env faylida `BACKUP_ENABLED=1` bo'lgan muhitda ishlaydi. **Hozir (2026-11-03 dan) demo'da yoqilgan, production'da o'chiq** — real mahsulotlar demo bazaga kiritilmoqda. Do'kon production'ga ko'chgach `.env.prod` da `BACKUP_ENABLED=1`, `.env.demo` da `0` qilib, ikkala muhitda `deploy.sh` / `demo.sh update` ishga tushiring (o'chiq muhitda eski `backup` konteyneri o'zi olib tashlanadi).
+- Har kuni `BACKUP_TIMES` soatlarida (standart 14:00 va 22:00, Toshkent) `deploy/backups/<BACKUP_NAME>-*.dump` ga yozadi (`xostavar-*` production, `xostavar-demo-*` demo), `BACKUP_KEEP_DAYS` kundan eskisini o'chiradi.
+- Telegram: env faylda `TELEGRAM_BOT_TOKEN` va `TELEGRAM_CHAT_ID` to'ldirilsa har zaxira guruhga fayl bo'lib boradi (sarlavhada `BACKUP_NAME`), xatoda ogohlantirish keladi.
+- Qo'lda darhol zaxira: production `./backup-now.sh`, demo `./demo.sh backup`.
+- Server tashqarisiga nusxa: lokal kompyuterda `deploy/pull-backups.sh` (ikkala muhitning zaxiralarini rsync bilan `~/xostavar-zaxira/` ga tortadi).
+- Tiklash: `./restore.sh backups/<fayl>.dump` (demo: `ENV_FILE=.env.demo PROJECT=xostavar-demo ./restore.sh ...`).
 - Zaxirani server tashqarisiga ham nusxalang (`rsync`/`scp`) — bitta diskka ishonmang.
 
 ## Mahsulot rasmlari
@@ -66,4 +67,5 @@ Production bilan bir xil kod, lekin alohida papka, baza, port va domen: `https:/
 - Ko'tarish/yangilash: `cd ~/xostavar-demo/backend/deploy && ./demo.sh update`
 - Demo bazani qayta seed qilish: `./demo.sh reset` (admin / 1234, demo ma'lumot)
 - Nginx + sertifikat (bir marta, sudo): `sudo bash nginx-setup.sh demo.ombor-control.uz 8701 ombor-control-demo`
-- Compose loyiha nomi `xostavar-demo`, production `xostavar` ga tegmaydi. Zaxira xizmati demo'da ishlamaydi.
+- Compose loyiha nomi `xostavar-demo`, production `xostavar` ga tegmaydi.
+- Zaxira: `.env.demo` da `BACKUP_ENABLED=1`, `BACKUP_NAME=xostavar-demo`, `BACKUP_TIMES`, `BACKUP_KEEP_DAYS`, `TELEGRAM_*` bo'lsa demo bazasi ham kunlik zaxiralanadi va Telegramga boradi (hozir shunday).
