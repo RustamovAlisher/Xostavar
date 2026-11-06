@@ -18,7 +18,7 @@ describe('formatlash', () => {
     expect(esc('Bolt <M8> & gayka')).toBe('Bolt &lt;M8&gt; &amp; gayka');
   });
 
-  it('sotuv xabari: qatorlar, jami, dollar, to\'lovlar; nasiya bo\'lsa sarlavha va qarz', () => {
+  it("sotuv xabari: qatorlar va jami; nasiya bo'lsa sarlavha va qarz", () => {
     const base = {
       number: 'MAIN-20261106-0012', branchName: 'Asosiy', cashierName: 'Aziz', customerName: '', createdAt: tk('2026-11-06 14:32'),
       lines: [{ name: 'Disk <230>', variantName: '230 mm', qty: 3, unit: 'dona', unitPrice: 28_600, lineTotal: 85_800 }],
@@ -26,16 +26,15 @@ describe('formatlash', () => {
       payments: [{ kind: 'cash', label: 'Naqd pul', amount: 85_800, amountUsd: 7.15 }],
     };
     const m = saleMessage(base);
-    expect(m).toContain('🧾 <b>Yangi sotuv</b> · <code>MAIN-20261106-0012</code>');
-    expect(m).toContain('14:32');
-    expect(m).toContain('Disk &lt;230&gt; (230 mm)');
-    expect(m).toContain('3 dona × 28 600 = <b>85 800</b>');
+    expect(m).toContain('🧾 <b>Sotuv</b> · 14:32');
+    expect(m).toContain('• Disk &lt;230&gt; (230 mm) — 3 dona × 28 600 = <b>85 800</b>');
     expect(m).toContain("Jami: 85 800 so'm</b>  (≈ $7.15)");
-    expect(m).toContain('💵 Naqd pul: 85 800 ($7.15)');
-    expect(m).toContain('Mijoz: Oddiy mijoz');
-    const credit = saleMessage({ ...base, customerName: 'Vali', remainingDebt: 50_000, customerDebtAfter: 150_000, payments: [] });
+    expect(m).toContain('<i>MAIN-20261106-0012 · Asosiy · Aziz</i>');
+    expect(m).not.toContain('Naqd pul');
+    const credit = saleMessage({ ...base, customerName: 'Vali', remainingDebt: 50_000, customerDebtAfter: 150_000, payments: [], discount: 1_000 });
     expect(credit).toContain('📒 <b>Nasiyaga sotuv</b>');
-    expect(credit).toContain("Qarzga: <b>50 000 so'm</b> · mijozning jami qarzi 150 000");
+    expect(credit).toContain('Chegirma: −1 000');
+    expect(credit).toContain('Qarzga: <b>50 000</b> · Vali (jami qarzi 150 000)');
   });
 
   it('kun yakuni: foyda faqat ruxsat bo\'lsa; bo\'sh kun', () => {

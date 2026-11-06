@@ -54,32 +54,25 @@ const MAX_LINES = 25;
 function linesBlock(lines: LineView[]): string {
   const shown = lines.slice(0, MAX_LINES).map((l) => {
     const name = esc(l.variantName ? `${l.name} (${l.variantName})` : l.name);
-    return `• ${name}\n   ${qtyStr(l.qty)} ${esc(l.unit)} × ${money(l.unitPrice)} = <b>${money(l.lineTotal)}</b>`;
+    return `• ${name} — ${qtyStr(l.qty)} ${esc(l.unit)} × ${money(l.unitPrice)} = <b>${money(l.lineTotal)}</b>`;
   });
   if (lines.length > MAX_LINES) shown.push(`<i>… va yana ${lines.length - MAX_LINES} ta mahsulot</i>`);
   return shown.join('\n');
 }
 
-function paysLine(pays: PayView[]): string {
-  return pays.map((p) => `${kindIcon(p.kind)} ${esc(p.label)}: ${money(p.amount)}${p.amountUsd ? ` (${usd(p.amountUsd)})` : ''}`).join('\n');
-}
-
+/** Sotuv xabari: nima, qancha va jami. Chek raqami, filial va kassir — pastda bitta kichik qatorda. */
 export function saleMessage(s: SaleMsgInput): string {
   const credit = s.remainingDebt > 0;
   const out = [
-    `${credit ? '📒 <b>Nasiyaga sotuv</b>' : '🧾 <b>Yangi sotuv</b>'} · <code>${esc(s.number)}</code>`,
-    `🏬 ${esc(s.branchName)} · 👤 ${esc(s.cashierName)} · 🕐 ${timeTk(s.createdAt)}`,
+    `${credit ? '📒 <b>Nasiyaga sotuv</b>' : '🧾 <b>Sotuv</b>'} · ${timeTk(s.createdAt)}`,
     '',
     linesBlock(s.lines),
     '',
   ];
-  if (s.discount > 0) out.push(`Oraliq: ${money(s.subtotal)} · 🏷 Chegirma: −${money(s.discount)}`);
+  if (s.discount > 0) out.push(`🏷 Chegirma: −${money(s.discount)}`);
   out.push(`💰 <b>Jami: ${money(s.total)} so'm</b>${s.usdRate ? `  (≈ ${usd(s.total / s.usdRate)})` : ''}`);
-  if (s.payments.length) out.push(paysLine(s.payments));
-  if (credit) {
-    out.push(`📒 Qarzga: <b>${money(s.remainingDebt)} so'm</b>${s.customerDebtAfter != null ? ` · mijozning jami qarzi ${money(s.customerDebtAfter)}` : ''}`);
-  }
-  out.push(`👥 Mijoz: ${esc(s.customerName || 'Oddiy mijoz')}`);
+  if (credit) out.push(`📒 Qarzga: <b>${money(s.remainingDebt)}</b> · ${esc(s.customerName || 'Oddiy mijoz')}${s.customerDebtAfter != null ? ` (jami qarzi ${money(s.customerDebtAfter)})` : ''}`);
+  out.push('', `<i>${esc(s.number)} · ${esc(s.branchName)} · ${esc(s.cashierName)}</i>`);
   return out.join('\n');
 }
 
