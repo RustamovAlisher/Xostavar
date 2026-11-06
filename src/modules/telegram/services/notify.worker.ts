@@ -5,7 +5,6 @@ import { dailyDue, MAX_ATTEMPTS, nextDailyAt, RETRY_DELAYS_S, tashkentDay, wants
 import { TelegramRepository, type OutboxRow, type TelegramChatRow } from '../repositories/telegram.repository.js';
 import { NotifyService } from './notify.service.js';
 import { SalesReportService } from './sales-report.service.js';
-import { MENU_INLINE } from './telegram-bot.service.js';
 import { TelegramClient, TelegramError } from './telegram.client.js';
 
 const TICK_MS = 3_000;
@@ -95,7 +94,7 @@ export class NotifyWorker implements OnApplicationBootstrap, OnApplicationShutdo
   /** Bitta hodisa → mos chatlar. Hammasiga yetib borsa true. */
   private async deliver(row: OutboxRow, chats: TelegramChatRow[]): Promise<boolean> {
     let ctx: EventCtx = { branchId: row.branchId };
-    let render: (chat: TelegramChatRow) => Promise<{ html: string; menu?: boolean } | null>;
+    let render: (chat: TelegramChatRow) => Promise<{ html: string } | null>;
 
     if (row.kind === 'sale' || row.kind === 'void' || row.kind === 'debt_payment') {
       const data = row.refId ? await this.report.saleData(row.refId) : null;
@@ -113,12 +112,12 @@ export class NotifyWorker implements OnApplicationBootstrap, OnApplicationShutdo
         const key = chat.branchIds?.length ? [...chat.branchIds].sort().join(',') : 'all';
         if (!cache.has(key)) cache.set(key, this.report.dayReport(day, chat.branchIds?.length ? chat.branchIds : null));
         const r = await cache.get(key)!;
-        return { html: dailyReportMessage(r, { showProfit: chat.showProfit, asOf: day === tashkentDay() ? new Date() : undefined }), menu: true };
+        return { html: dailyReportMessage(r, { showProfit: chat.showProfit, asOf: day === tashkentDay() ? new Date() : undefined }) };
       };
     } else {
       // test
       const by = typeof row.payload?.by === 'string' ? row.payload.by : '';
-      render = async () => ({ html: `✅ <b>Sinov xabari</b>\nOmbor Control boti shu chatga ulangan va ishlayapti.${by ? `\nYubordi: ${esc(by)}` : ''}`, menu: true });
+      render = async () => ({ html: `✅ <b>Sinov xabari</b>\nOmbor Control boti shu chatga ulangan va ishlayapti.${by ? `\nYubordi: ${esc(by)}` : ''}` });
     }
 
     const targets = chats.filter((c) => (row.kind === 'test' ? c.chatId === row.payload?.chatId : wants(c, row.kind, ctx)) && !row.sentChatIds.includes(c.chatId));
@@ -128,7 +127,7 @@ export class NotifyWorker implements OnApplicationBootstrap, OnApplicationShutdo
       try {
         const msg = await render(chat);
         if (!msg) continue;
-        await this.tg.sendMessage(chat.chatId, msg.html, msg.menu ? MENU_INLINE : undefined);
+        await this.tg.sendMessage(chat.chatId, msg.html);
         sent.push(chat.chatId);
         await new Promise((r) => setTimeout(r, process.env.NODE_ENV === 'test' ? 0 : SEND_GAP_MS));
       } catch (e) {

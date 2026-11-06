@@ -7,30 +7,16 @@ import { NotifyService } from './notify.service.js';
 import { SalesReportService } from './sales-report.service.js';
 import { TelegramClient, TelegramError, type ReplyMarkup, type TgChat, type TgUpdate } from './telegram.client.js';
 
-/** Hisobot xabarlari ostidagi tugmalar (guruhda ham ishlaydi — callback privacy rejimida ham keladi). */
-export const MENU_INLINE: ReplyMarkup = {
-  inline_keyboard: [
-    [{ text: '📊 Bugungi savdo', callback_data: 'r:t' }, { text: '📅 Kecha', callback_data: 'r:y' }],
-    [{ text: "🧾 Cheklar ro'yxati", callback_data: 'l:t' }, { text: '📥 Excel (bugun)', callback_data: 'x:t' }],
-    [{ text: "🧾 Kechagi cheklar", callback_data: 'l:y' }, { text: '📥 Excel (kecha)', callback_data: 'x:y' }],
-  ],
-};
-
-/** Shaxsiy chatda pastki doimiy klaviatura. */
-const MENU_REPLY: ReplyMarkup = {
-  keyboard: [[{ text: '📊 Bugungi savdo' }, { text: '📅 Kecha' }], [{ text: "🧾 Cheklar ro'yxati" }, { text: '📥 Excel' }]],
-  resize_keyboard: true,
-  is_persistent: true,
-};
+/** Chatda eski doimiy klaviatura qolgan bo'lsa — birinchi javobda olib tashlanadi (tugmalar ishlatilmaydi). */
+const NO_KEYBOARD: ReplyMarkup = { remove_keyboard: true };
 
 type Action = 'report' | 'list' | 'excel';
 type Day = 't' | 'y';
 
-/** Buyruq / tugma matni → amal. */
-const TEXT_ACTIONS: Record<string, [Action, Day] | 'menu' | 'help'> = {
+/** Buyruq matni → amal (tugmalar yo'q, faqat buyruqlar). */
+const TEXT_ACTIONS: Record<string, [Action, Day] | 'help'> = {
   '/bugun': ['report', 't'], '/kecha': ['report', 'y'], '/cheklar': ['list', 't'], '/excel': ['excel', 't'],
-  '/menu': 'menu', '/help': 'help', '/yordam': 'help',
-  '📊 bugungi savdo': ['report', 't'], '📅 kecha': ['report', 'y'], "🧾 cheklar ro'yxati": ['list', 't'], '📥 excel': ['excel', 't'],
+  '/help': 'help', '/yordam': 'help',
 };
 
 const HELP = [
@@ -38,11 +24,11 @@ const HELP = [
   '',
   'Har bir sotuv, bekor qilingan chek va nasiya haqida xabar keladi; har kuni kechqurun kun yakuni yuboriladi.',
   '',
+  'Kerak bo\'lsa quyidagilarni yozing:',
   '/bugun — bugungi savdo',
   '/kecha — kechagi savdo',
   "/cheklar — bugungi cheklar ro'yxati",
   '/excel — bugungi savdo Excel faylda',
-  '/menu — tugmalar',
 ].join('\n');
 
 const POLL_ERROR_WAIT_MS = 5_000;
@@ -113,6 +99,7 @@ export class TelegramBotService implements OnApplicationBootstrap, OnApplication
       if (st === 'kicked' || st === 'left') await this.repo.deactivateByChatId(String(u.my_chat_member.chat.id));
       return;
     }
+    // Yangi xabarlarda tugma yo'q, lekin chat tarixidagi eski tugmalar bosilsa ham ishlayversin
     if (u.callback_query) {
       const q = u.callback_query;
       const chat = q.message?.chat;
@@ -140,8 +127,7 @@ export class TelegramBotService implements OnApplicationBootstrap, OnApplication
       if (cmd.startsWith('/')) await this.tg.sendMessage(m.chat.id, this.notLinkedText());
       return;
     }
-    if (known === 'help') return void (await this.tg.sendMessage(m.chat.id, HELP, m.chat.type === 'private' ? MENU_REPLY : MENU_INLINE));
-    if (known === 'menu') return void (await this.tg.sendMessage(m.chat.id, 'Kerakli hisobotni tanlang:', MENU_INLINE));
+    if (known === 'help') return void (await this.tg.sendMessage(m.chat.id, HELP, NO_KEYBOARD));
     await this.run(linked, known[0], known[1]);
   }
 
@@ -170,11 +156,11 @@ export class TelegramBotService implements OnApplicationBootstrap, OnApplication
       await this.audit.log(c.createdBy ? { id: c.createdBy, name: c.createdByName, roleName: '' } : null, {
         action: 'add', module: 'Sozlamalar', targetId: row.id, targetName: `Telegram: ${row.title}`, details: `Telegram chat ulandi (${row.type}, ${row.chatId})`,
       });
-      await this.tg.sendMessage(chat.id, `✅ <b>${esc(row.title)}</b> ulandi.\n\n${HELP}`, chat.type === 'private' ? MENU_REPLY : MENU_INLINE);
+      await this.tg.sendMessage(chat.id, `✅ <b>${esc(row.title)}</b> ulandi.\n\n${HELP}`, NO_KEYBOARD);
       return;
     }
     const linked = await this.linked(chat);
-    if (linked) await this.tg.sendMessage(chat.id, HELP, chat.type === 'private' ? MENU_REPLY : MENU_INLINE);
+    if (linked) await this.tg.sendMessage(chat.id, HELP, NO_KEYBOARD);
     else await this.tg.sendMessage(chat.id, this.notLinkedText());
   }
 
@@ -183,12 +169,12 @@ export class TelegramBotService implements OnApplicationBootstrap, OnApplication
     const scope = chat.branchIds?.length ? chat.branchIds : null;
     if (action === 'report') {
       const r = await this.report.dayReport(day, scope);
-      await this.tg.sendMessage(chat.chatId, dailyReportMessage(r, { showProfit: chat.showProfit, title: d === 't' ? 'Bugungi savdo' : 'Kechagi savdo', asOf: d === 't' ? new Date() : undefined }), MENU_INLINE);
+      await this.tg.sendMessage(chat.chatId, dailyReportMessage(r, { showProfit: chat.showProfit, title: d === 't' ? 'Bugungi savdo' : 'Kechagi savdo', asOf: d === 't' ? new Date() : undefined }));
       return;
     }
     if (action === 'list') {
       const parts = receiptsListMessages(day, await this.report.scopeName(scope), await this.report.receipts(day, scope));
-      for (let i = 0; i < parts.length; i++) await this.tg.sendMessage(chat.chatId, parts[i], i === parts.length - 1 ? MENU_INLINE : undefined);
+      for (const part of parts) await this.tg.sendMessage(chat.chatId, part);
       return;
     }
     // excel
@@ -198,6 +184,6 @@ export class TelegramBotService implements OnApplicationBootstrap, OnApplication
     await this.tg.sendChatAction(chat.chatId, 'upload_document');
     const { buffer, filename } = await this.report.dayExcel(day, scope, chat.showProfit);
     const r = await this.report.dayReport(day, scope);
-    await this.tg.sendDocument(chat.chatId, buffer, filename, `📥 <b>Savdo · ${day.split('-').reverse().join('.')}</b>\n${r.receipts} ta chek · ${r.revenue.toLocaleString('ru-RU').replace(/ /g, ' ')} so'm`, MENU_INLINE);
+    await this.tg.sendDocument(chat.chatId, buffer, filename, `📥 <b>Savdo · ${day.split('-').reverse().join('.')}</b>\n${r.receipts} ta chek · ${r.revenue.toLocaleString('ru-RU').replace(/ /g, ' ')} so'm`);
   }
 }

@@ -58,7 +58,7 @@ Avval `--apply` siz ishga tushiring (hisobot), keyin `--apply`.
   Guruh uchun botni guruhga qo'shib, guruhga `/start KOD` yozing. Har chat uchun filial, minimal summa va xabar turlari alohida.
 - Xabarlar `notification_outbox` navbati orqali ketadi: Telegram ishlamasa kassa to'xtamaydi, keyin qayta urinadi (7 marta, 30 daqiqagacha).
 - Kun yakuni `SALES_BOT_DAILY_AT` (standart 21:00, Toshkent) da; server shu paytda o'chiq bo'lsa — yonganda bir marta yuboriladi.
-- Bot buyruqlari: `/bugun`, `/kecha`, `/cheklar`, `/excel`, `/menu` (va xabar ostidagi tugmalar).
+- Bot buyruqlari: `/bugun`, `/kecha`, `/cheklar`, `/excel`. Xabarlarda tugma yo'q (foydalanuvchi qarori 2026-11-06) — faqat matn.
 
 ## Foydali buyruqlar
 ```

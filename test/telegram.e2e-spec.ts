@@ -20,6 +20,7 @@ describe('telegram savdo boti', () => {
   let bot: TelegramBotService;
   let worker: NotifyWorker;
   const sent: { chatId: string; text: string }[] = [];
+  const markups: (Record<string, unknown> | undefined)[] = [];
   const docs: { chatId: string; filename: string; buf: Buffer; caption?: string }[] = [];
   let failNext: TelegramError | null = null;
 
@@ -36,13 +37,15 @@ describe('telegram savdo boti', () => {
     // Serverdagi SALES_BOT_ENABLED=1 holati (env ilova moduli import qilinganda o'qiladi — shu yerda yoqamiz)
     (app.get(NotifyService) as { enabled: boolean }).enabled = true;
     const tg = app.get(TelegramClient);
-    vi.spyOn(tg, 'sendMessage').mockImplementation(async (chatId, text) => {
+    vi.spyOn(tg, 'sendMessage').mockImplementation(async (chatId, text, markup) => {
       if (failNext) { const e = failNext; failNext = null; throw e; }
       sent.push({ chatId: String(chatId), text });
+      markups.push(markup as Record<string, unknown> | undefined);
       return { message_id: sent.length, chat: { id: Number(chatId), type: 'supergroup' } };
     });
-    vi.spyOn(tg, 'sendDocument').mockImplementation(async (chatId, buf, filename, caption) => {
+    vi.spyOn(tg, 'sendDocument').mockImplementation(async (chatId, buf, filename, caption, markup) => {
       docs.push({ chatId: String(chatId), buf, filename, caption });
+      markups.push(markup as Record<string, unknown> | undefined);
       return { message_id: 1, chat: { id: Number(chatId), type: 'supergroup' } };
     });
     vi.spyOn(tg, 'answerCallback').mockResolvedValue(true);
@@ -127,11 +130,11 @@ describe('telegram savdo boti', () => {
     await s.admin.patch(`/telegram/chats/${chat.id}`, { branchIds: null });
   });
 
-  it("tugmalar: bugungi hisobot, cheklar ro'yxati, Excel fayl", async () => {
+  it("buyruqlar va eski tugmalar: bugungi hisobot, cheklar ro'yxati, Excel fayl — javobda tugma yo'q", async () => {
     // Test bazasida boshqa fayllarning cheklari ham bor — hisobotni shu test filialiga cheklaymiz
     const ch0 = (await s.admin.get('/telegram')).body.chats[0];
     await s.admin.patch(`/telegram/chats/${ch0.id}`, { branchIds: [branch] });
-    await bot.handleUpdate(press('r:t'));
+    await bot.handleUpdate(groupMsg('/bugun'));
     const rep = lastTo(GROUP);
     expect(rep).toContain('📊 <b>Bugungi savdo');
     expect(rep).toContain('Tushum:');
@@ -140,12 +143,13 @@ describe('telegram savdo boti', () => {
     expect(rep).toContain('Yalpi foyda');
 
     const before = sent.length;
-    await bot.handleUpdate(press('l:t'));
+    await bot.handleUpdate(groupMsg('/cheklar'));
     const list = sent.slice(before).map((m) => m.text).join('\n');
     expect(list).toContain('🧾 <b>Cheklar');
     expect(list).toContain('❌ <s>');
     expect(list).toContain("Jami: <b>2</b> ta sotuv");
 
+    // Eski xabardagi tugma bosilsa ham ishlaydi
     await bot.handleUpdate(press('x:t'));
     const d = docs.at(-1)!;
     expect(d.chatId).toBe(GROUP);
@@ -160,6 +164,9 @@ describe('telegram savdo boti', () => {
     expect(ch.getRow(1).getCell(2).value).toBe('Chek №');
     expect([2, 3, 4].map((i) => ch.getRow(i).getCell(4).value)).toContain('Bekor');
     expect(wb.getWorksheet("Mahsulot bo'yicha")!.getRow(2).getCell(4).value).toBe(100_000);
+    // Hech bir xabarda tugma yuborilmaydi
+    expect(markups.filter((m) => m && 'inline_keyboard' in m)).toHaveLength(0);
+    expect(markups.filter((m) => m && 'keyboard' in m)).toHaveLength(0);
 
     // Foyda yashirilsa hisobotda ham yo'q
     const chat = (await s.admin.get('/telegram')).body.chats[0];
