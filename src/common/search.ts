@@ -170,7 +170,7 @@ export const BUILTIN_SYNONYMS: readonly string[] = [
   'anker mix, anker-mix, ankermix, dyubel mix, dyubel-mix, дюбель-гвоздь, дюбель гвоздь, montaj mixi, pistolet mixi',
   'anker, анкер, gluxar, glukhar, gluhar, глухарь, shurup-gluxar, lag screw, din 571',
   'krovelniy, krovelnyy, кровельный, tom samorezi, tom samorez, krovlya, krisha, крыша',
-  'tom shaybasi, tom shayba, krisha shaybasi, krisha shayba, shifer shaybasi, shifer shayba, кровельная шайба, шайба для шифера, krovelnaya shayba',
+  'tom shaybasi, tom shayba, krisha shaybasi, krisha shayba, shifer shaybasi, shifer shayba, кровельная шайба, шайба для шифера, шайба для кровельного самореза, шайба кровельная, krovelnaya shayba',
   'olti qirrali, shestigrannik, шестигранник, shestigrannoy, hex',
   'gayka, гайка, gaika, gaykasi',
   'shayba, шайба, shaiba, shaybasi',
