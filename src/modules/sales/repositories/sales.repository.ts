@@ -3,7 +3,7 @@ import { and, desc, eq, gte, ilike, inArray, lte, or, sql } from 'drizzle-orm';
 import { DB, type Db, type DbOrTx } from '../../../db/db.module.js';
 import { branches, paymentMethods, saleLines, salePayments, sales, units } from '../../../entities/index.js';
 import type { SalesListQuery } from '../dto/sales.dto.js';
-import { foldTokens, tokenRegex } from '../../../common/search.js';
+import { textQuery } from '../../../common/search-sql.js';
 
 export type SaleRow = typeof sales.$inferSelect;
 export type SaleLineRow = typeof saleLines.$inferSelect;
@@ -112,22 +112,18 @@ export class SalesRepository {
 
   /**
    * Matn qidiruvi: raqam, mijoz ismi, qator nomi/SKU. Har bir so'z alohida (hammasi bo'lishi kerak, tartib ahamiyatsiz),
-   * imlo variantlari (kirill/lotin, apostrof, w/v, q/k...) regex bilan qamraladi. Tarix katta bo'lgani uchun xato-tuzatish yo'q.
+   * imlo variantlari va sinonimlar (common/search-sql.ts). Tarix katta bo'lgani uchun xato-tuzatish yo'q.
    */
   private textFilter(raw?: string) {
-    const term = raw?.trim();
-    if (!term) return undefined;
-    const toks = foldTokens(term);
-    const like = `%${term}%`;
-    if (!toks.length) return or(ilike(sales.number, like), ilike(sales.customerName, like));
-    return and(...toks.map((t) => {
-      const re = tokenRegex(t);
-      return or(
-        sql`${sales.number} ~* ${re}`,
-        sql`${sales.customerName} ~* ${re}`,
-        sql`exists (select 1 from ${saleLines} where ${saleLines.saleId} = ${sales.id} and (${saleLines.name} ~* ${re} or ${saleLines.sku} ~* ${re}))`,
-      );
-    }));
+    const all = (col: unknown, res: string[]) => and(...res.map((re) => sql`${col} ~* ${re}`));
+    const cond = textQuery(raw, (res) => or(
+      all(sales.number, res),
+      all(sales.customerName, res),
+      sql`exists (select 1 from ${saleLines} where ${saleLines.saleId} = ${sales.id} and (${all(saleLines.name, res)} or ${all(saleLines.sku, res)}))`,
+    ));
+    if (cond !== null) return cond;
+    const like = `%${raw!.trim()}%`;
+    return or(ilike(sales.number, like), ilike(sales.customerName, like));
   }
 
   /** Ro'yxat + jami (2 ta so'rov). `cashierId` servisda hal qilinadi: kassir uchun o'ziniki, aks holda filtr. */

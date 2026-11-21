@@ -32,6 +32,8 @@ export const businessRules = pgTable('business_rules', {
   requireShift: boolean('require_shift').notNull().default(true),
   /** 0 = cheklanmagan. */
   cashierMaxDiscount: money('cashier_max_discount').notNull().default(0),
+  /** Qidiruv lug'ati: har element — bir xil narsaning nomlari, vergul bilan («ombur, passatij»). Ichki lug'atga qo'shiladi. */
+  searchSynonyms: text('search_synonyms').array().notNull().default([]),
   version: version(),
   updatedAt: updatedAt(),
 });

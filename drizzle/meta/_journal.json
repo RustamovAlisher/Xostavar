@@ -85,6 +85,13 @@
       "when": 1795236294502,
       "tag": "0011_sale_debt_target",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1795238526261,
+      "tag": "0012_search_synonyms",
+      "breakpoints": true
     }
   ]
 }

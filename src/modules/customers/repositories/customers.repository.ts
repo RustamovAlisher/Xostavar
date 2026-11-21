@@ -3,7 +3,7 @@ import { and, asc, desc, eq, gt, inArray, isNull, like, lt, ne, or, sql } from '
 import { DB, type Db, type DbOrTx } from '../../../db/db.module.js';
 import { customerGroups, customers, debtLedger, saleLines, salePayments, sales } from '../../../entities/index.js';
 import type { CustomerListQuery } from '../dto/customers.dto.js';
-import { foldTokens, tokenRegex } from '../../../common/search.js';
+import { textQuery } from '../../../common/search-sql.js';
 
 export type CustomerRow = typeof customers.$inferSelect;
 export type CustomerInsert = typeof customers.$inferInsert;
@@ -25,8 +25,7 @@ export class CustomersRepository {
     const term = raw?.trim();
     if (!term) return undefined;
     const digits = term.replace(/\D/g, '');
-    const toks = foldTokens(term);
-    const byName = toks.length ? and(...toks.map((t) => sql`${customers.name} ~* ${tokenRegex(t)}`)) : sql`lower(${customers.name}) like ${`%${term.toLowerCase()}%`}`;
+    const byName = textQuery(term, (res) => and(...res.map((re) => sql`${customers.name} ~* ${re}`))) ?? sql`lower(${customers.name}) like ${`%${term.toLowerCase()}%`}`;
     return digits.length >= 2 ? or(byName, like(customers.phone, `%${digits}%`)) : byName;
   }
 

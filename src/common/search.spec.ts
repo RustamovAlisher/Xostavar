@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { fold, foldTokens, makeDoc, rank, rankText, matchesText, tokenRegex, editDistance } from './search.js';
+import { fold, foldTokens, makeDoc, rank, rankText, matchesText, tokenRegex, editDistance, setExtraSynonyms } from './search.js';
 
 const names = [
   "Polvon qo'l arrasi",
@@ -114,5 +114,60 @@ describe('tokenRegex', () => {
     expect(re('kol').test('қўл')).toBe(true);
     expect(re('arrasi').test('arasi')).toBe(true);
     expect(re('sement').test('цемент')).toBe(true);
+    expect(re('ploskogubtsy').test('Pollwon ploskogubtsy')).toBe(true); // ts → s
+    expect(re('plaskagubsi').test('ploskogubtsy')).toBe(false); // y≠i oxirida: SQL da xato-tuzatish yo'q
+    expect(re('akfix').test('Akfiks')).toBe(true); // x = ks
+    expect(re('jidkie').test('zhidkie')).toBe(true); // zh = j
+    expect(re('qsyhq').test('Pollwon 3qsyhq')).toBe(true); // q→k, ks→h zanjiri
+  });
+});
+
+describe("mahalliy nomlar, harf va unli farqlari (foydalanuvchi so'rovlari)", () => {
+  const cat = [
+    'Pollwon ploskogubtsy va bokorezy, ikki komponentli dasta',
+    'Truba kaliti richagli (газовый / трубный ключ), qizil',
+    "Pollwon qo'l arrasi yog'och uchun (ножовка), 3D tish",
+    'Akfix 620 Power Classic montaj kleyi (suyuq mix), shaffof, 310 ml',
+    'U-Yes 880 montaj yelimi (jidkie gvozdi), 350 ml',
+    'Makute burchak shlifovka mashinasi (bolgarka)',
+    'Sait 646 erituvchi (rastvoritel) 1 l',
+    'Ruletka 3 m, sariq',
+  ];
+  const f = (q: string) => rankText(cat, q, (n) => [n]);
+  it('bitta l / ikkita l: polwon = pollwon', () => {
+    expect(f('polwon')[0]).toMatch(/^Pollwon/);
+    expect(f('pollwon')[0]).toMatch(/^Pollwon/);
+    expect(f('polvon arra')[0]).toBe("Pollwon qo'l arrasi yog'och uchun (ножовка), 3D tish");
+  });
+  it('unli farqi: gazovoy = gazavoy = газовый', () => {
+    for (const q of ['gazovoy', 'gazavoy', 'газовый', 'gazoviy kalit']) expect(f(q)[0], q).toMatch(/^Truba kaliti/);
+  });
+  it('mahalliy nom: ombur / ploskegubsa / passatij → ploskogubtsy', () => {
+    for (const q of ['ombur', 'ombir', 'ploskegubsa', 'plaskagubsi', 'пассатижи', 'ombur pollwon']) expect(f(q)[0], q).toMatch(/ploskogubtsy/);
+  });
+  it('ibora sinonimi: suyuq mix ↔ jidkie gvozdi (ikkala mahsulot)', () => {
+    expect(f('jidkie gvozdi')).toEqual(expect.arrayContaining([cat[3], cat[4]]));
+    expect(f('suyuq mix')).toEqual(expect.arrayContaining([cat[3], cat[4]]));
+  });
+  it('boshqa sinonimlar: nojovka→arra, rastvaritel, рулетка, ushm', () => {
+    expect(f('nojovka')[0]).toMatch(/arrasi/);
+    expect(f('rastvaritel')[0]).toMatch(/erituvchi/);
+    expect(f('рулетка')[0]).toMatch(/^Ruletka/);
+    expect(f('ushm')[0]).toMatch(/bolgarka/);
+  });
+  it("do'kon lug'ati (Sozlamalar): qo'shilgan nom ishlaydi, olib tashlansa ishlamaydi", () => {
+    expect(f('tarozicha')).toEqual([]);
+    setExtraSynonyms(['tarozicha, ruletka']);
+    expect(f('tarozicha')[0]).toMatch(/^Ruletka/);
+    setExtraSynonyms([]);
+    expect(f('tarozicha')).toEqual([]);
+  });
+  it("qisqa so'zda unli farqi yolg'on moslik bermaydi (kol ≠ kalit)", () => {
+    expect(f('kol')).not.toContain('Truba kaliti richagli (газовый / трубный ключ), qizil');
+  });
+  it('SQL regex: 5+ harfda o/a', () => {
+    const re = new RegExp(tokenRegex(foldTokens('gazavoy')[0]), 'i');
+    expect(re.test('gazovoy klyuch')).toBe(true);
+    expect(re.test('газовый')).toBe(false); // -ый: regex xatoga chidamli emas, faqat imlo variantlari
   });
 });

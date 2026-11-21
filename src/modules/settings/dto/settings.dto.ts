@@ -24,6 +24,8 @@ export class BusinessRulesDto {
   @IsBoolean() allowNegativeStock: boolean;
   @IsBoolean() requireShift: boolean;
   @IsInt() @Min(0) cashierMaxDiscount: number;
+  /** Qidiruv lug'ati (sinonimlar): har qator — vergul bilan ajratilgan nomlar. */
+  @IsOptional() @IsArray() @ArrayMaxSize(1000) @IsString({ each: true }) @MaxLength(500, { each: true }) searchSynonyms?: string[];
 }
 
 export class UnitDto {

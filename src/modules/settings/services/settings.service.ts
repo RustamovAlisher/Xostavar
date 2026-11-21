@@ -1,4 +1,5 @@
-import { Inject, Injectable } from '@nestjs/common';
+import { Inject, Injectable, type OnModuleInit } from '@nestjs/common';
+import { setExtraSynonyms } from '../../../common/search.js';
 import { DB, type Db, type DbOrTx } from '../../../db/db.module.js';
 import { runTx } from '../../../db/tx.js';
 import type { AuthUser } from '../../../common/decorators/auth-context.js';
@@ -11,6 +12,11 @@ import { SettingsRepository, type NamedTable } from '../repositories/settings.re
 
 export type { SettingsBundle } from '../mappers/settings.mapper.js';
 export type { BusinessRulesRow } from '../repositories/settings.repository.js';
+
+/** Bo'sh qatorlar va bitta nomli (sinonimi yo'q) qatorlar olib tashlanadi, takrorlar birlashtiriladi. */
+const cleanSynonyms = (lines: string[]) => [
+  ...new Set(lines.map((l) => l.split(/[,;\n]/).map((x) => x.trim()).filter(Boolean).join(', ')).filter((l) => l.includes(','))),
+];
 
 const dupName = (names: string[]) => {
   const seen = new Set<string>();
@@ -27,12 +33,21 @@ const dupName = (names: string[]) => {
  * Saqlash: butun to'plam bitta tranzaksiyada, "ishlatilmoqda" tekshiruvlari bilan.
  */
 @Injectable()
-export class SettingsService {
+export class SettingsService implements OnModuleInit {
   constructor(
     @Inject(DB) private readonly db: Db,
     private readonly repo: SettingsRepository,
     private readonly audit: AuditService,
   ) {}
+
+  /** Ishga tushganda: do'kon qidiruv lug'ati umumiy qidiruv yadrosiga beriladi (katalog, sotuv, mijoz, audit). */
+  async onModuleInit() {
+    await this.loadSynonyms().catch(() => undefined); // baza hali migratsiya qilinmagan bo'lsa — ichki lug'at bilan ishlaydi
+  }
+
+  private async loadSynonyms() {
+    setExtraSynonyms((await this.repo.rules())?.searchSynonyms ?? []);
+  }
 
   async getAll(db?: DbOrTx) {
     return toSettingsBundle(await this.repo.allRows(db));
@@ -66,9 +81,11 @@ export class SettingsService {
         defaultMinStock: r.defaultMinStock, defaultCreditDays: r.defaultCreditDays, defaultCreditLimit: r.defaultCreditLimit,
         estimatedMarginPct: r.estimatedMarginPct, quickDownPaymentPcts: r.quickDownPaymentPcts,
         allowNegativeStock: r.allowNegativeStock, requireShift: r.requireShift, cashierMaxDiscount: r.cashierMaxDiscount,
+        ...(r.searchSynonyms ? { searchSynonyms: cleanSynonyms(r.searchSynonyms) } : {}),
       });
       await this.audit.log(actor, { action: 'edit', module: 'Sozlamalar', targetName: 'Tizim sozlamalari', details: 'Sozlamalar yangilandi' }, tx);
     });
+    await this.loadSynonyms();
     return this.getAll();
   }
 
