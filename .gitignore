@@ -20,3 +20,7 @@ deploy/backups/
 
 # Yuklangan mahsulot rasmlari (serverda volume)
 uploads/
+
+# Python keshi (tools/*.py ishga tushganda o'zi yaratiladi)
+__pycache__/
+*.pyc
