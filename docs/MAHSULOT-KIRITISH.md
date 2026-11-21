@@ -13,7 +13,7 @@ export XOSTAVAR_LOGIN=<sizga berilgan login>       # 1-kompyuter: admin, 2-kompy
 export XOSTAVAR_PASSWORD=<parol>
 python3 backend/tools/addprod.py settings          # kategoriya, birlik, andozalarni ko'rish — ulanish tekshiruvi
 ```
-Rasmlar `real-mahsulotlar-rasimlari/` papkasida; fayl nomida mahsulot nomi, sotish narxi va tannarx bo'ladi
+Yangi (kiritilmagan) rasmlar `real-mahsulotlar-rasimlari/yangi/` papkasiga tushadi; fayl nomida mahsulot nomi, sotish narxi va tannarx bo'ladi
 (masalan `numix-reliance-narx:100,000-tannarx:80,000.jpg` → chakana 100 000, tannarx 80 000 so'm). Rasm papkasi git'ga kirmaydi.
 
 ## 2. Har bir rasm uchun tartib
@@ -25,8 +25,8 @@ Rasmlar `real-mahsulotlar-rasimlari/` papkasida; fayl nomida mahsulot nomi, soti
 5. **Rasm**: `"image"` maydoni (URL yoki fayl) bilan `add` da, yoki keyin `addprod.py image <SKU> <URL|fayl>`.
 6. **Hisobot**: nom, kategoriya, SKU, variantlar, narx va tannarx, rasm manbasi, tasdiqlanmagan narsalar (hajm, rang nomi).
 7. **Rasmni ajratish** (adashmaslik uchun): ishlov berilgan rasm(lar) `real-mahsulotlar-rasimlari/qoshilgan/` ga SKU prefiksi bilan ko'chiriladi:
-   `addprod.py done NUMIX-REL real-mahsulotlar-rasimlari/photo_1.jpg real-mahsulotlar-rasimlari/photo_2.jpg`
-   → `qoshilgan/NUMIX-REL__photo_1.jpg`. Asosiy papkada faqat hali kiritilmagan rasmlar qoladi.
+   `addprod.py done NUMIX-REL real-mahsulotlar-rasimlari/yangi/photo_1.jpg real-mahsulotlar-rasimlari/yangi/photo_2.jpg`
+   → `qoshilgan/NUMIX-REL__photo_1.jpg`. `yangi/` da faqat hali kiritilmagan rasmlar qoladi.
 
 ## 3. Qoidalar
 

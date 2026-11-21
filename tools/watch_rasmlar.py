@@ -5,7 +5,8 @@
 
 Claude Code fonda ishga tushiradi (run_in_background); skript chiqishi bilan Claude xabar oladi va
 chiqarilgan rasmlarni MAHSULOT-KIRITISH.md bo'yicha kiritadi, so'ng skriptni qayta ishga tushiradi.
-Papkada boshidanoq kiritilmagan rasm bo'lsa, darhol ularni chiqaradi (`qoshilgan/` papkasi hisobga olinmaydi).
+Standart papka: real-mahsulotlar-rasimlari/yangi (kiritilmagan rasmlar); ishlov berilganlari `done` bilan ../qoshilgan/ ga ko'chadi.
+Papkada boshidanoq kiritilmagan rasm bo'lsa, darhol ularni chiqaradi.
 Chiqish: har qatorda bitta rasm yo'li; hech narsa topilmasa chiqmaydi, kutaveradi.
 """
 import os, re, sys, time
@@ -25,7 +26,7 @@ def images(folder):
 
 def main():
     args = [a for a in sys.argv[1:] if not a.startswith('--')]
-    folder = args[0] if args else 'real-mahsulotlar-rasimlari'
+    folder = args[0] if args else 'real-mahsulotlar-rasimlari/yangi'
     interval = 5
     if '--interval' in sys.argv:
         interval = float(sys.argv[sys.argv.index('--interval') + 1])

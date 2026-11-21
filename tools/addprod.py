@@ -174,7 +174,10 @@ def main():
     if cmd == 'done':  # serverga ulanish shart emas
         sku = sys.argv[2]
         for f in sys.argv[3:]:
-            dst_dir = os.path.join(os.path.dirname(os.path.abspath(f)), 'qoshilgan')
+            src_dir = os.path.dirname(os.path.abspath(f))
+            # yangi/ ichidagi rasm -> yonidagi qoshilgan/ (yangi bilan bir daraja), aks holda o'z papkasidagi qoshilgan/
+            base = os.path.dirname(src_dir) if os.path.basename(src_dir).lower() == 'yangi' else src_dir
+            dst_dir = os.path.join(base, 'qoshilgan')
             os.makedirs(dst_dir, exist_ok=True)
             note = os.path.splitext(f)[0] + '.txt'  # rasm yonidagi izoh fayli ham birga ko'chadi
             for src in ([f, note] if os.path.isfile(note) else [f]):
