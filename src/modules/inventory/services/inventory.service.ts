@@ -101,7 +101,13 @@ export class InventoryService {
         if (!name) throw notFound('Yetkazib beruvchi');
         supplierName = name;
       }
-      const r = await this.repo.insertReceipt(tx, { branchId, number: next, supplierId: dto.supplierId ?? null, supplierName, invoice: dto.invoice?.trim() || null, date: dto.date ?? todayISO(), userId: user.id, userName: user.name, note: dto.note?.trim() || null, totalCost: calc.reduce((a, c) => a + c.totalCost, 0) });
+      let supplierId = dto.supplierId ?? null;
+      if (!supplierId && supplierName) {
+        const sup = await this.repo.ensureSupplier(tx, supplierName); // yangi nom — bazaga avtomatik qo'shiladi
+        supplierId = sup.id;
+        supplierName = sup.name;
+      }
+      const r = await this.repo.insertReceipt(tx, { branchId, number: next, supplierId, supplierName, invoice: dto.invoice?.trim() || null, date: dto.date ?? todayISO(), userId: user.id, userName: user.name, note: dto.note?.trim() || null, totalCost: calc.reduce((a, c) => a + c.totalCost, 0) });
       for (const c of calc) {
         const lvl = levels.get(levelKey(c.l))!;
         const newCost = averageCost(lvl.stock, lvl.costPrice, c.qtyBase, c.costPerBase);
@@ -167,7 +173,7 @@ export class InventoryService {
       }
       await this.repo.updateReceiptLine(tx, line.id, { unit, qty, qtyBase, costPerUnit, costPerBase: qty4(costPerBase), totalCost: Math.round(qty * costPerUnit) });
       await this.repo.updateReceiptHead(tx, receipt.id, {
-        ...(dto.supplierName !== undefined ? { supplierName: dto.supplierName.trim() || null } : {}),
+        ...(dto.supplierName !== undefined ? { supplierName: dto.supplierName.trim() ? (await this.repo.ensureSupplier(tx, dto.supplierName.trim())).name : null } : {}),
         ...(dto.invoice !== undefined ? { invoice: dto.invoice.trim() || null } : {}),
       });
 

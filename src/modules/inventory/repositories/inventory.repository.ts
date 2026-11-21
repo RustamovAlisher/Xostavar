@@ -108,6 +108,16 @@ export class InventoryRepository {
     return tx.select({ id: branches.id, name: branches.name, active: branches.active }).from(branches).where(eq(branches.id, branchId)).for('update').then((r) => r[0] ?? null);
   }
 
+  /** Nom bo'yicha yetkazib beruvchini topadi (katta-kichik harfga e'tiborsiz), yo'q bo'lsa yaratadi. */
+  async ensureSupplier(tx: DbOrTx, name: string): Promise<{ id: string; name: string }> {
+    const found = await tx.select({ id: suppliers.id, name: suppliers.name }).from(suppliers).where(sql`lower(${suppliers.name}) = lower(${name})`).limit(1);
+    if (found[0]) return found[0];
+    const ins = await tx.insert(suppliers).values({ name }).onConflictDoNothing().returning({ id: suppliers.id, name: suppliers.name });
+    if (ins[0]) return ins[0];
+    const again = await tx.select({ id: suppliers.id, name: suppliers.name }).from(suppliers).where(sql`lower(${suppliers.name}) = lower(${name})`).limit(1);
+    return again[0]!;
+  }
+
   supplierName(id: string, tx: DbOrTx = this.db) {
     return tx.select({ name: suppliers.name }).from(suppliers).where(eq(suppliers.id, id)).limit(1).then((r) => r[0]?.name ?? null);
   }
