@@ -60,6 +60,14 @@ yoziladi (skript `X-Branch-Id` ni o'zi qo'yadi) va faqat `view_cost_price` huquq
 
 **Noaniqlik** — hajm, rang nomi yoki o'lcham tasdiqlanmasa mahsulot baribir qo'shiladi, hisobotda "tasdiqlash kerak" deb belgilanadi.
 
+**Mixlar (gvozd)** — kategoriya «Mixlar va mahkamlagichlar» (asosiy birlik `kg`, bo'lib sotiladi). Bozorda mix **uzunligi** bilan
+ataladi: «N-lik» = N mm uzunlik (80 mm → «80-lik», 100 mm → «100-lik»). Variant nomida faqat uzunlik va «N-lik» bo'ladi,
+diametr (3×, 4×, 6×) yozilmaydi — chalkashmasin: `"name": "100 mm (100-lik)"`, SKU `MIX-QUR-100`. Har variantga
+`conversions: [{"unit":"piece","factor": <1 dona kg>}]` — GOST 4028-63 dagi 1000 dona massasi / 1000 (shu uzunlikdagi keng
+tarqalgan diametr bo'yicha): 32 — 0,640; 40 — 0,949; 50 — 1,870; 60 — 2,230; 70 — 3,770; 80 — 4,330; 90 — 6,600;
+100 — 9,500; 120 — 11,500; 150 — 21,900; 200 — 43,100 kg/1000 dona. Yangi o'lcham — mavjud `MIX-QUR` ga variant (`update`),
+alohida mahsulot emas.
+
 ## 4. spec.json namunalari
 
 Variantli (rang kodlari):
