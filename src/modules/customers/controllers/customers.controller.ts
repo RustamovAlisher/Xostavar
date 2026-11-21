@@ -28,6 +28,13 @@ export class CustomersController {
     return this.customers.get(id);
   }
 
+  /** Mijoz kartasi: savdolar tarixi, har savdo bo'yicha qarz/to'lovlar, umumiy qarz. */
+  @Get(':id/profile')
+  @Perms('view_debts')
+  profile(@Param('id', ParseUUIDPipe) id: string) {
+    return this.customers.profile(id);
+  }
+
   @Get(':id/ledger')
   @Perms('view_debts')
   ledger(@Param('id', ParseUUIDPipe) id: string, @Query() q: PageQuery) {

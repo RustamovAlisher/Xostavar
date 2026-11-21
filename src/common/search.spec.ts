@@ -77,8 +77,14 @@ describe('rank', () => {
     expect(find('  ')).toHaveLength(names.length);
     expect(find('zzzzqqq')).toEqual([]);
   });
-  it("hammasi topilmasa bitta so'zni tashlab qidiradi", () => {
+  it("istalgan so'z (Elasticsearch match kabi): to'liq moslar tepada, qisman moslar pastda", () => {
     expect(find('polvon xyzxyz')).toContain("Polvon qo'l arrasi");
+    const r = find("bosch qo'l arrasi");
+    expect(r[0]).toBe("Bosch qo'l arrasi 500mm");
+    expect(r).toContain("Polvon qo'l arrasi"); // 2 ta so'zi mos
+    expect(r.indexOf("Polvon qo'l arrasi")).toBeLessThan(r.indexOf('Polvon elektr arra')); // 2 so'z > 1 so'z
+    expect(rankText(names, "bosch qo'l arrasi", (n) => [n]).length).toBeGreaterThan(1);
+    expect(rank(names, "bosch qo'l arrasi", (n) => makeDoc([n]), true)).toEqual(["Bosch qo'l arrasi 500mm"]); // strict
   });
   it('kodlar: SKU/shtrix-kod bo\'yicha', () => {
     const items = [

@@ -11,7 +11,8 @@
  *     bilan (Damerau–Levenshtein; ruxsat etilgan xato soni so'z uzunligiga bog'liq).
  *  4. BALL bo'yicha tartiblash: aniq/prefiks yaxshiroq, nom maydoni variant/SKU dan kuchliroq,
  *     so'zlar ketma-ket kelsa bonus, qisqa nom (aniqroq) oldinda.
- *  5. Hech narsa chiqmasa — bitta so'zni tashlab qayta qidiriladi (nol natijadan qochish).
+ *  5. Elasticsearch `match` + `minimum_should_match` kabi: hamma so'zi mos kelganlar tepada, keyin qisman moslar
+ *     (istalgan so'z: 1–3 so'zli so'rovda kamida 1 tasi, uzunroqda yarmi), ko'proq so'z mos kelgani oldinroq.
  */
 
 const APOS = /['`´‘’ʻʼʹ′ˈ]/g;
@@ -123,9 +124,14 @@ function tokenScore(t: string, p: string): number {
   return c === t && cp === p ? s : Math.max(s, rawScore(c, cp) * 0.95);
 }
 
+// O'zbekcha qo'shimchalar (fold'dan keyin: q→k): arrasi = arra + si, mixlar = mix + lar (yengil stemmer)
+const SUFFIX = /^(?:si|i|lar|lari|larni|larga|ni|ning|ga|ka|da|ta|dan|tan|dagi|lik|li)$/;
+
 function rawScore(t: string, p: string): number {
   if (p === t) return 10;
   if (p.startsWith(t)) return 8 - Math.min(2, (p.length - t.length) * 0.1);
+  // so'z + qo'shimcha (har ikki tomonda): «arrasi» → «arra», «arra» → «arrasi» prefiks bilan yuqorida
+  if (p.length >= 3 && t.startsWith(p) && SUFFIX.test(t.slice(p.length))) return 7.5;
   if (t.length >= 4 && p.includes(t)) return 5; // so'z o'rtasida — faqat 4+ belgi (3 belgida «ara» ⊂ «darajasi» kabi yolg'on moslik)
   if (isNum(t) || isNum(p)) return 0; // o'lcham/raqamlarda xato yo'q (5 ≠ 6)
   const k = typoBudget(t.length);
@@ -185,23 +191,25 @@ export function scoreDoc(doc: SearchDoc, q: ParsedQuery): Scored {
 
 /**
  * Ro'yxatni so'rov bo'yicha filtrlaydi va ball bo'yicha tartiblaydi. Bo'sh so'rov — o'zgarishsiz.
- * To'liq mos kelganlar bo'lmasa va 2+ so'z bo'lsa — bitta so'zi mos kelmaganlari (past ball bilan); `strict` — faqat to'liq mos.
+ * Avval hamma so'zi mos kelganlar, keyin qisman moslar (ko'p so'z mos → oldinroq). `strict` — faqat to'liq mos.
  */
 export function rank<T>(items: readonly T[], query: string, getDoc: (x: T) => SearchDoc, strict = false): T[] {
   const q = parseQuery(query);
   if (!q.raw) return items as T[];
   if (!q.tokens.length) return items.filter((x) => getDoc(x).codes.some((c) => c.includes(q.raw)));
-  const full: { x: T; s: number }[] = [];
-  const part: { x: T; s: number }[] = [];
-  const need = Math.max(1, q.tokens.length - 1);
+  const n = q.tokens.length;
+  const minShould = n <= 3 ? 1 : Math.ceil(n / 2);
+  const full: { x: T; s: number; m: number }[] = [];
+  const part: { x: T; s: number; m: number }[] = [];
   for (const x of items) {
     const r = scoreDoc(getDoc(x), q);
     if (r.score <= 0) continue;
-    if (r.matched === r.total) full.push({ x, s: r.score });
-    else if (!strict && q.tokens.length >= 2 && r.matched >= need) part.push({ x, s: r.score });
+    if (r.matched === r.total) full.push({ x, s: r.score, m: r.matched });
+    else if (!strict && r.matched >= minShould) part.push({ x, s: r.score, m: r.matched });
   }
-  const pick = full.length ? full : part;
-  return pick.sort((a, b) => b.s - a.s).map((e) => e.x); // sort barqaror — teng ballda asl tartib
+  full.sort((a, b) => b.s - a.s); // sort barqaror — teng ballda asl tartib
+  part.sort((a, b) => b.m - a.m || b.s - a.s);
+  return [...full, ...part].map((e) => e.x);
 }
 
 /** Oddiy matnli ro'yxatlar uchun (mijoz, foydalanuvchi, xarajat...): har bir maydon — nom tokenlari. */
