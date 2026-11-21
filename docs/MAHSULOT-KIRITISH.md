@@ -60,6 +60,12 @@ yoziladi (skript `X-Branch-Id` ni o'zi qo'yadi) va faqat `view_cost_price` huquq
 
 **Noaniqlik** — hajm, rang nomi yoki o'lcham tasdiqlanmasa mahsulot baribir qo'shiladi, hisobotda "tasdiqlash kerak" deb belgilanadi.
 
+**Mix va samorezlar: nom = uzunlik («N-lik»)** — mix ham, samorezning barcha turlari ham variant nomida faqat
+uzunlik bilan: `"16 mm (16-lik)"`, SKU `<MAHSULOT>-16`. Diametr nomga yozilmaydi (chalkashmasin) — mahsulot tavsifiga:
+«Diametr: 16–55 mm — Ø3,5 mm; 65–75 mm — Ø4,2 mm». Samorezlar ham «Mixlar va mahkamlagichlar» da, donalab (`piece`):
+`SAMOREZ-GK` qora gipsokarton, `SAMOREZ-PSH-O` press-shaybali o'tkir uchli, `SAMOREZ-PSH-P` press-shaybali parmali uchli.
+Bitta mahsulotda bir uzunlik ikki marta bo'lmasin (bo'lsa — alohida mahsulot).
+
 **Mixlar (gvozd)** — kategoriya «Mixlar va mahkamlagichlar» (asosiy birlik `kg`, bo'lib sotiladi). Bozorda mix **uzunligi** bilan
 ataladi: «N-lik» = N mm uzunlik (80 mm → «80-lik», 100 mm → «100-lik»). Variant nomida faqat uzunlik va «N-lik» bo'ladi,
 diametr (3×, 4×, 6×) yozilmaydi — chalkashmasin: `"name": "100 mm (100-lik)"`, SKU `MIX-QUR-100`. Har variantga
