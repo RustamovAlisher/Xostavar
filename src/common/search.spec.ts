@@ -206,6 +206,11 @@ describe('gluxar va tom samorezi (bozor atamalari)', () => {
     expect(f('глухарь 10')[0]).toBe(cat[2]);
     expect(f('gluhar 8')[0]).toBe(cat[1]);
   });
+  it('anker = gluxar (bozorda «anker»)', () => {
+    const a = ['Anker (shurup-gluxar, olti qirrali bosh, rux qoplamali)', "Press-shaybali samorez, o'tkir uchli (rux qoplamali, oq)"];
+    expect(rankText(a, 'анкер 100', (n) => [n])[0]).toBe(a[0]);
+    expect(rankText(a, 'gluxar', (n) => [n])[0]).toBe(a[0]);
+  });
   it('кровельный саморез / krovelniy → tom samorezi', () => {
     expect(f('кровельный саморез')[0]).toBe(cat[0]);
     expect(f('krovelnyy')[0]).toBe(cat[0]);

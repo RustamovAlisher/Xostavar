@@ -167,7 +167,7 @@ export const BUILTIN_SYNONYMS: readonly string[] = [
   'nivelir, нивелир, uroven, уровень, daraja, darajasi, lazer',
   'samorez, samariz, саморез, shurup, шуруп, burama mix',
   'press shayba, press-shayba, presshayba, пресс-шайба, прессшайба, klop, клоп, shaybali',
-  'gluxar, glukhar, gluhar, глухарь, shurup-gluxar, lag screw, din 571',
+  'anker, анкер, gluxar, glukhar, gluhar, глухарь, shurup-gluxar, lag screw, din 571',
   'krovelniy, krovelnyy, кровельный, tom samorezi, tom samorez, krovlya',
   'olti qirrali, shestigrannik, шестигранник, shestigrannoy, hex',
   'o\'tkir, otkir, ostriy, острый, ostry',
