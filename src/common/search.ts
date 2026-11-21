@@ -172,6 +172,8 @@ export const BUILTIN_SYNONYMS: readonly string[] = [
   'krovelniy, krovelnyy, кровельный, tom samorezi, tom samorez, krovlya, krisha, крыша',
   'tom shaybasi, tom shayba, krisha shaybasi, krisha shayba, shifer shaybasi, shifer shayba, кровельная шайба, шайба для шифера, шайба для кровельного самореза, шайба кровельная, krovelnaya shayba',
   'olti qirrali, shestigrannik, шестигранник, shestigrannoy, hex',
+  'pales, pals, palets, palets, палец, пальцевая петля, pales petlya',
+  'petlya, петля, sharnir, шарнир, navesi, навес',
   'gayka, гайка, gaika, gaykasi',
   'shayba, шайба, shaiba, shaybasi',
   'qalin, yo\'g\'on, yogon, tolstiy, толстый',

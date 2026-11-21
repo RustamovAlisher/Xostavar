@@ -262,3 +262,15 @@ describe('gayka va shayba (DIN 934 / DIN 125)', () => {
     expect(f('krisha shayba')[0]).toBe(cat[2]);
   });
 });
+
+describe('pales (bozorda «pals»)', () => {
+  // haqiqiy katalogdagidek: variant nomlari ham qidiriladi (extra)
+  const cat = [
+    { n: "Pales, payvandlanadigan silindrik petlya (eshik/darvoza uchun)", v: ['Ø10 mm (10-lik)', 'Ø20 mm (20-lik)', 'Ø40 mm (40-lik)'] },
+    { n: "ДИМА bit to'plami 10 dona (10PC Bit Set, NO.2013)", v: [] as string[] },
+  ];
+  const f = (q: string) => rank(cat, q, (x) => makeDoc([x.n], x.v)).map((x) => x.n);
+  it('pals 10 / палец / петля → pales', () => {
+    for (const q of ['pals 10', 'палец 10', 'петля 20', 'sharnir']) expect(f(q)[0], q).toBe(cat[0].n);
+  });
+});
