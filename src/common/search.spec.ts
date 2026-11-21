@@ -172,3 +172,24 @@ describe("mahalliy nomlar, harf va unli farqlari (foydalanuvchi so'rovlari)", ()
     expect(re.test('газовый')).toBe(false); // -ый: regex xatoga chidamli emas, faqat imlo variantlari
   });
 });
+
+describe("samorezlar: press-shayba, uch turi, gipsokarton (bozor atamalari)", () => {
+  const cat = [
+    "Press-shaybali samorez, o'tkir uchli (rux qoplamali, oq)",
+    "Press-shaybali samorez, parmali uchli (rux qoplamali, oq)",
+    "Samorez gipsokarton va yog'och uchun, qora (fosfatlangan), yirik rezbali",
+  ];
+  const f = (q: string) => rankText(cat, q, (n) => [n]);
+  it('press shayba / klop / пресс-шайба → ikkala press-shaybali', () => {
+    for (const q of ['press shayba', 'klop samorez', 'пресс-шайба', 'presshayba']) expect(f(q).slice(0, 2).sort(), q).toEqual([cat[0], cat[1]].sort());
+  });
+  it("uch turi: sverlo/parmali → parmali; ostriy → o'tkir", () => {
+    expect(f('samorez sverlo')[0]).toBe(cat[1]);
+    expect(f('samariz parmali')[0]).toBe(cat[1]);
+    expect(f('саморез острый')[0]).toBe(cat[0]);
+  });
+  it('gipsakarton samariz → qora gipsokarton samorezi', () => {
+    expect(f('gipsakarton samariz')[0]).toBe(cat[2]);
+    expect(f('саморез гкл')[0]).toBe(cat[2]);
+  });
+});
