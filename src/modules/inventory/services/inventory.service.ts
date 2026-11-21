@@ -195,6 +195,40 @@ export class InventoryService {
     return this.getReceipt((await this.repo.findReceiptLine(lineId))!.receiptId);
   }
 
+  /**
+   * Kirim qatorini o'chirish (xato yoki takror kiritilgan kirim). Qoldiq kamaytiriladi (jurnalga `stock_in` −qty,
+   * ref `stock_receipt_delete`), o'rtacha tannarx shu kirimsiz qayta hisoblanadi. Hujjatda boshqa qator qolmasa hujjat ham
+   * o'chadi, aks holda jami qayta hisoblanadi. Kirimdan sotilgan bo'lib qoldiq yetmasa — rad etiladi. Faqat shu kirim qilingan filialda.
+   */
+  async deleteReceiptLine(user: AuthUser, branchId: string, lineId: string, reason?: string, requestId?: string) {
+    await runTx(this.db, async (tx) => {
+      const b = await this.repo.lockBranch(tx, branchId);
+      if (!b?.active) throw forbidden('Filial nofaol', 'branch_inactive');
+      const row = await this.repo.lockReceiptLine(tx, lineId);
+      if (!row) throw notFound('Kirim qatori');
+      const { line, receipt } = row;
+      if (receipt.branchId !== branchId) throw forbidden("Boshqa filial kirimini o'chirib bo'lmaydi", 'branch_forbidden');
+      const key: LevelKey = { productId: line.productId, variantId: line.variantId };
+      const lvl = (await this.lockLevels(tx, branchId, [key], true)).get(levelKey(key))!;
+      const oldBase = Number(line.qtyBase), oldCpb = Number(line.costPerBase);
+      if (lvl.stock - oldBase < 0) {
+        throw unprocessable('insufficient_stock', `Bu kirimdan sotilgan: omborda ${lvl.stock} qoldi, ${oldBase} ni olib bo'lmaydi`);
+      }
+      const newCost = editAverageCost(lvl.stock, lvl.costPrice, oldBase, oldCpb, 0, 0);
+      await this.applyMovement(tx, lvl, { branchId, productId: line.productId, variantId: line.variantId, type: 'stock_in', qtyBase: -oldBase, unit: line.unit, qtyUnit: -Number(line.qty), costPerBase: oldCpb, refType: 'stock_receipt_delete', refId: receipt.id, userId: user.id, newCost });
+      await this.repo.deleteReceiptLine(tx, line.id);
+      if ((await this.repo.receiptLines(receipt.id, tx)).length === 0) await this.repo.deleteReceipt(tx, receipt.id);
+      else await this.repo.updateReceiptHead(tx, receipt.id, {});
+      const short = (await this.repo.allUnits(tx)).find((u) => u.id === line.unit)?.short ?? line.unit;
+      await this.audit.log(user, {
+        action: 'delete', module: 'Mahsulotlar', targetId: line.productId, targetName: line.productName, branchId, requestId,
+        details: `Kirim №${receipt.number} qatori o'chirildi (${b.name}): −${Number(line.qty)} ${short}${reason?.trim() ? `. Sabab: ${reason.trim()}` : ''}`,
+        diff: { before: { miqdor: `${Number(line.qty)} ${short}` }, after: {} },
+      }, tx);
+    });
+    return { ok: true };
+  }
+
   async getReceipt(id: string, user?: AuthUser) {
     const r = await this.repo.findReceipt(id);
     if (!r) throw notFound('Kirim hujjati');

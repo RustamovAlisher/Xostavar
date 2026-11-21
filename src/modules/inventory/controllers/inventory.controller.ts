@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, ParseUUIDPipe, Patch, Post, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, ParseUUIDPipe, Patch, Post, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { BranchId, BranchScoped, CurrentUser, Perms, Req, requestIdOf, type AuthRequest, type AuthUser } from '../../../common/decorators/auth-context.js';
 import { Idempotent } from '../../../common/interceptors/idempotency.interceptor.js';
@@ -49,6 +49,13 @@ export class InventoryController {
   @Perms('stock_in')
   editLine(@CurrentUser() u: AuthUser, @BranchId() branchId: string, @Req() req: AuthRequest, @Param('id', ParseUUIDPipe) id: string, @Body() dto: StockInLineEditDto) {
     return this.inventory.editReceiptLine(u, branchId, id, dto, requestIdOf(req));
+  }
+
+  /** Kirim qatorini o'chirish (xato/takror kirim): qoldiq va o'rtacha tannarx qaytariladi. Sotilgan bo'lsa — 422. */
+  @Delete('stock-in/lines/:id')
+  @Perms('stock_in')
+  deleteLine(@CurrentUser() u: AuthUser, @BranchId() branchId: string, @Req() req: AuthRequest, @Param('id', ParseUUIDPipe) id: string, @Query('reason') reason?: string) {
+    return this.inventory.deleteReceiptLine(u, branchId, id, reason, requestIdOf(req));
   }
 
   @Get('stock-in/:id')

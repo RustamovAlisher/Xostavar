@@ -207,4 +207,52 @@ describe('inventory (TZ 7.4, 8.5, 8.6, 9.5)', () => {
       expect((await s.admin.patch(`/stock-in/lines/00000000-0000-0000-0000-000000000000`, { qty: 1 })).status).toBe(404);
     });
   });
+
+  describe("kirimni o'chirish (DELETE /stock-in/lines/:id)", () => {
+    it("takror kirim qatori o'chiriladi: qoldiq va o'rtacha tannarx qaytadi, jurnal yaxlit, audit yoziladi", async () => {
+      const p = await makeProduct(s.admin, s, { stock: 100, cost: 1000 }); // 100 @ 1000
+      const r = (await s.admin.post('/stock-in', { lines: [{ productId: p.id, unit: 'piece', qty: 100, costPerUnit: 2000 }] })).body;
+      expect((await s.admin.get(`/products/${p.id}`)).body).toMatchObject({ stock: 200, costPrice: 1500 });
+
+      const d = await s.admin.del(`/stock-in/lines/${r.lines[0].id}?reason=${encodeURIComponent('takror kiritilgan')}`);
+      expect(d.status).toBe(200);
+      expect((await s.admin.get(`/products/${p.id}`)).body).toMatchObject({ stock: 100, costPrice: 1000 });
+      expect((await s.admin.get(`/stock-in/${r.id}`)).status).toBe(404);
+
+      const m = (await s.admin.get(`/stock-movements?productId=${p.id}&pageSize=50`)).body.items as { qtyBase: number; balanceAfter: number; refType: string }[];
+      expect(m[0]).toMatchObject({ qtyBase: -100, balanceAfter: 100, refType: 'stock_receipt_delete' });
+      expect(m.reduce((a, x) => a + x.qtyBase, 0)).toBe(100);
+
+      const logs = (await s.admin.get(`/audit-logs?q=${encodeURIComponent(`Kirim №${r.number} qatori o'chirildi`)}&pageSize=5`)).body.items as { details: string }[];
+      expect(logs).toHaveLength(1);
+      expect(logs[0].details).toMatch(/−100 dona.*Sabab: takror kiritilgan/);
+    });
+
+    it("sotilgan kirimni o'chirib bo'lmaydi; huquq, filial va mavjud bo'lmagan hujjat", async () => {
+      const p = await makeProduct(s.admin, s, { price: 5000 });
+      const r = (await s.admin.post('/stock-in', { lines: [{ productId: p.id, unit: 'piece', qty: 10, costPerUnit: 1000 }] })).body;
+      const close = await ensureShift(s.admin);
+      expect((await s.admin.post('/sales', { lines: [{ productId: p.id, unit: 'piece', qty: 8 }], payments: [{ methodId: s.methods.cash, amount: 40000 }] })).status).toBe(201);
+      await close();
+      expect(code(await s.admin.del(`/stock-in/lines/${r.lines[0].id}`))).toBe('insufficient_stock');
+      expect((await s.admin.get(`/products/${p.id}`)).body.stock).toBe(2); // hech narsa o'zgarmadi
+      expect((await s.buxgalter.del(`/stock-in/lines/${r.lines[0].id}`)).status).toBe(403);
+      const other = (await s.admin.post('/branches', { name: uniq('Filial ') }, { idem: false })).body.id;
+      expect(code(await s.admin.at(other).del(`/stock-in/lines/${r.lines[0].id}`))).toBe('branch_forbidden');
+      expect((await s.admin.del('/stock-in/lines/00000000-0000-0000-0000-000000000000')).status).toBe(404);
+    });
+
+    it("ko'p qatorli hujjatda faqat tanlangan qator o'chadi, hujjat va jami qoladi", async () => {
+      const a = await makeProduct(s.admin, s, { stock: 0 });
+      const b = await makeProduct(s.admin, s, { stock: 0 });
+      const r = (await s.admin.post('/stock-in', { lines: [{ productId: a.id, unit: 'piece', qty: 5, costPerUnit: 1000 }, { productId: b.id, unit: 'piece', qty: 3, costPerUnit: 2000 }] })).body;
+      const lineA = r.lines.find((l: { productId: string }) => l.productId === a.id).id;
+      expect((await s.admin.del(`/stock-in/lines/${lineA}`)).status).toBe(200);
+      expect((await s.admin.get(`/products/${a.id}`)).body.stock).toBe(0);
+      expect((await s.admin.get(`/products/${b.id}`)).body.stock).toBe(3);
+      const left = (await s.admin.get(`/stock-in/${r.id}`)).body;
+      expect(left.lines).toHaveLength(1);
+      expect(left.totalCost).toBe(6000);
+    });
+  });
 });

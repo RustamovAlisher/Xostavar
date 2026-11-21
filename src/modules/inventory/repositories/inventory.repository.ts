@@ -141,6 +141,15 @@ export class InventoryRepository {
       .then((r) => r[0] ?? null);
   }
 
+  /** Hujjatni o'chiradi (qatorlari `cascade` bilan ketadi). */
+  deleteReceipt(tx: DbOrTx, id: string) {
+    return tx.delete(stockReceipts).where(eq(stockReceipts.id, id));
+  }
+
+  deleteReceiptLine(tx: DbOrTx, id: string) {
+    return tx.delete(stockReceiptLines).where(eq(stockReceiptLines.id, id));
+  }
+
   findReceiptLine(id: string, tx: DbOrTx = this.db) {
     return tx.select({ receiptId: stockReceiptLines.receiptId }).from(stockReceiptLines).where(eq(stockReceiptLines.id, id)).limit(1).then((r) => r[0] ?? null);
   }
