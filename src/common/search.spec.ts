@@ -274,3 +274,17 @@ describe('pales (bozorda «pals»)', () => {
     for (const q of ['pals 10', 'палец 10', 'петля 20', 'sharnir']) expect(f(q)[0], q).toBe(cat[0].n);
   });
 });
+
+describe('podshipnikli pales (bozorda «pachemnikli pals»)', () => {
+  const cat = [
+    { n: 'Pales, payvandlanadigan silindrik petlya (eshik/darvoza uchun)', v: ['Ø28 mm (28-lik)', 'Ø32 mm (32-lik)'] },
+    { n: 'Pales podshipnikli (sharikli), payvandlanadigan silindrik petlya (darvoza uchun)', v: ['Ø32 mm (32-lik)'] },
+  ];
+  const f = (q: string) => rank(cat, q, (x) => makeDoc([x.n], x.v)).map((x) => x.n);
+  it('pals pachemniklik 32 / подшипник → podshipnikli', () => {
+    for (const q of ['pals pachemniklik 32', 'pachemnikli pals', 'петля подшипник', 'sharikli pales']) expect(f(q)[0], q).toBe(cat[1].n);
+  });
+  it('pals 28 → oddiy pales', () => {
+    expect(f('pals 28')[0]).toBe(cat[0].n);
+  });
+});

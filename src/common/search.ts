@@ -174,6 +174,7 @@ export const BUILTIN_SYNONYMS: readonly string[] = [
   'olti qirrali, shestigrannik, шестигранник, shestigrannoy, hex',
   'pales, pals, palets, palets, палец, пальцевая петля, pales petlya',
   'petlya, петля, sharnir, шарнир, navesi, навес',
+  'podshipnik, podshipnikli, pachemnik, pachemnikli, pachemniklik, подшипник, подшипниковый, sharikli, шариковый',
   'gayka, гайка, gaika, gaykasi',
   'shayba, шайба, shaiba, shaybasi',
   'qalin, yo\'g\'on, yogon, tolstiy, толстый',
