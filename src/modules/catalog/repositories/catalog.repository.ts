@@ -6,6 +6,7 @@ import {
   branchPrices, branches, categories, productBarcodes, productVariants, products, saleLines, stockLevels, stockReceiptLines, unitConversions, units,
 } from '../../../entities/index.js';
 import type { ProductListQuery } from '../dto/catalog.dto.js';
+import { makeDoc, rank } from '../../../common/search.js';
 
 export type ProductRow = typeof products.$inferSelect;
 export type VariantRow = typeof productVariants.$inferSelect;
@@ -52,8 +53,30 @@ export class CatalogRepository {
     return { variants, convs, codes, levels, prices };
   }
 
+  /**
+   * Aqlli qidiruv (common/search.ts): nom, variant nomi, SKU va shtrix-kodlar bo'yicha — kirill/lotin, apostrof, imlo xatosi,
+   * so'zlar tartibi ahamiyatsiz. Katalog kichik (minglab qator), shuning uchun yengil indeks bitta o'qishda olinadi.
+   * Natija: ball bo'yicha tartiblangan mahsulot id'lari (eng ko'pi 500).
+   */
+  async searchIds(term: string, tx: DbOrTx = this.db): Promise<string[]> {
+    const [prods, codes, vars] = await Promise.all([
+      tx.select({ id: products.id, name: products.name, sku: products.sku }).from(products).where(isNull(products.deletedAt)),
+      tx.select({ productId: productBarcodes.productId, barcode: productBarcodes.barcode }).from(productBarcodes),
+      tx.select({ productId: productVariants.productId, name: productVariants.name, sku: productVariants.sku }).from(productVariants).where(isNull(productVariants.deletedAt)),
+    ]);
+    const extra = new Map<string, { names: string[]; codes: string[] }>();
+    const slot = (id: string) => { let e = extra.get(id); if (!e) extra.set(id, (e = { names: [], codes: [] })); return e; };
+    for (const c of codes) slot(c.productId).codes.push(c.barcode);
+    for (const v of vars) { const e = slot(v.productId); e.names.push(v.name); e.codes.push(v.sku); }
+    const docs = new Map(prods.map((p) => {
+      const e = extra.get(p.id);
+      return [p.id, makeDoc([p.name], [p.sku, ...(e?.names ?? [])], [p.sku, ...(e?.codes ?? [])])] as const;
+    }));
+    return rank(prods, term, (p) => docs.get(p.id)!).slice(0, 500).map((p) => p.id);
+  }
+
   /** Ro'yxat sahifasi + jami + kategoriya bo'yicha facet (3 ta so'rov, bitta WHERE). */
-  list(branchId: string | null, q: ProductListQuery, tx: DbOrTx = this.db) {
+  async list(branchId: string | null, q: ProductListQuery, tx: DbOrTx = this.db) {
     const where: SQL[] = [isNull(products.deletedAt)];
     if (q.categoryId) where.push(eq(products.categoryId, q.categoryId));
     const inBranch = q.inBranch === 'true' || q.inBranch === '1';
@@ -63,23 +86,16 @@ export class CatalogRepository {
     if ((q.lowStock === 'true' || q.lowStock === '1') && branchId) {
       where.push(exists(tx.select({ x: sql`1` }).from(stockLevels).where(and(eq(stockLevels.branchId, branchId), eq(stockLevels.productId, products.id), gt(stockLevels.minStock, 0), sql`${stockLevels.stock} < ${stockLevels.minStock}`))));
     }
+    let byRank: SQL | undefined;
     if (q.q?.trim()) {
-      const term = q.q.trim();
-      // lower(col) like — `lower(...)` ustidagi trigram (gin) indekslar ishlaydi; ILIKE bu indekslarni ishlatmaydi
-      const like = `%${term.toLowerCase()}%`;
-      const lk = (col: PgColumn) => sql`lower(${col}) like ${like}`;
-      where.push(
-        or(
-          lk(products.name),
-          lk(products.sku),
-          exists(tx.select({ x: sql`1` }).from(productBarcodes).where(and(eq(productBarcodes.productId, products.id), lk(productBarcodes.barcode)))),
-          exists(tx.select({ x: sql`1` }).from(productVariants).where(and(eq(productVariants.productId, products.id), isNull(productVariants.deletedAt), or(lk(productVariants.name), lk(productVariants.sku))))),
-        )!,
-      );
+      const ids = await this.searchIds(q.q, tx);
+      where.push(ids.length ? inArray(products.id, ids) : sql`false`);
+      if (ids.length) byRank = sql`array_position(array[${sql.join(ids.map((i) => sql`${i}`), sql`, `)}]::uuid[], ${products.id})`;
     }
     const cond = and(...where);
+    const order = byRank && q.sort !== 'name' ? [byRank] : q.sort === 'name' ? [asc(products.name)] : [desc(products.createdAt)];
     return Promise.all([
-      tx.select().from(products).where(cond).orderBy(q.sort === 'name' ? asc(products.name) : desc(products.createdAt)).limit(q.pageSize).offset(q.offset),
+      tx.select().from(products).where(cond).orderBy(...order).limit(q.pageSize).offset(q.offset),
       tx.select({ total: sql<number>`count(*)::int` }).from(products).where(cond).then((r) => r[0].total),
       tx.select({ categoryId: products.categoryId, n: sql<number>`count(*)::int` }).from(products).where(cond).groupBy(products.categoryId),
     ]);

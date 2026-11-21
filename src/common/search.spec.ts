@@ -1,0 +1,112 @@
+import { describe, expect, it } from 'vitest';
+import { fold, foldTokens, makeDoc, rank, rankText, matchesText, tokenRegex, editDistance } from './search.js';
+
+const names = [
+  "Polvon qo'l arrasi",
+  "Polvon elektr arra",
+  "Bosch qo'l arrasi 500mm",
+  'Shtukaturka 25 kg',
+  'Sement M400 50 kg',
+  'Mix 5x10 mm',
+  'Gvozd 100 mm',
+  'Gvozd 10 mm',
+  'Қўл арра Полвон',
+];
+const find = (q: string) => rankText(names, q, (n) => [n]);
+
+describe('fold', () => {
+  it('imlo variantlari bir xil kalitga keladi', () => {
+    expect(fold('pollwon')).toBe('polvon');
+    expect(fold('Полвон')).toBe('polvon');
+    expect(fold("qo'l")).toBe(fold('қўл'));
+    expect(fold('qo‘l')).toBe(fold('kol'));
+    expect(fold('Цемент')).toBe(fold('sement'));
+    expect(fold('Xostavar')).toBe(fold('hostavar'));
+    expect(fold('shifer')).toBe(fold('шифер'));
+    expect(fold('Акфикс')).toBe(fold('Akfix'));
+    expect(fold('Лексус')).toBe(fold('lexus'));
+  });
+  it("raqam/harf chegarasi va o'lcham", () => {
+    expect(foldTokens('10mm')).toEqual(['10', 'mm']);
+    expect(foldTokens('5x10')).toEqual(['5', '10']);
+    expect(foldTokens('5*10 мм')).toEqual(['5', '10', 'mm']);
+  });
+});
+
+describe('editDistance', () => {
+  it('Damerau', () => {
+    expect(editDistance('polvon', 'polvno', 2)).toBe(1); // transpozitsiya
+    expect(editDistance('abc', 'xyz', 1)).toBe(2); // max+1
+  });
+});
+
+describe('rank', () => {
+  it('pollwon arrasi → Polvon arralari', () => {
+    const r = find('pollwon arrasi');
+    expect(r).toContain("Polvon qo'l arrasi");
+    expect(r[0]).toBe("Polvon qo'l arrasi");
+  });
+  it("so'zlar tartibi ahamiyatsiz", () => {
+    expect(find("arrasi qo'l polvon")[0]).toBe("Polvon qo'l arrasi");
+    expect(find('qol polvon')).toContain("Polvon qo'l arrasi");
+  });
+  it('kirill va lotin', () => {
+    expect(find('қўл полвон')).toEqual(expect.arrayContaining(["Polvon qo'l arrasi", 'Қўл арра Полвон']));
+    expect(find('Полвон арра')).toContain('Polvon elektr arra');
+    expect(find('цемент')).toEqual(['Sement M400 50 kg']);
+    expect(find('sement')).toEqual(['Sement M400 50 kg']);
+  });
+  it("4 harfli so'zda xato yo'q (arra ≠ abra), 5+ da bor", () => {
+    expect(rankText(['Abraziv'], 'arra', (n) => [n])).toEqual([]);
+    expect(rankText(['Gvozdilka'], 'gvozdlka', (n) => [n])).toHaveLength(1);
+  });
+  it('xato bilan yozilgan', () => {
+    expect(find('polwan')).toContain("Polvon qo'l arrasi");
+    expect(find('polvno')).toContain("Polvon qo'l arrasi");
+    expect(find('shtukatruka')).toContain('Shtukaturka 25 kg');
+  });
+  it("o'lcham aniq: 10 mm ≠ 100 mm birinchi", () => {
+    expect(find('gvozd 10mm')[0]).toBe('Gvozd 10 mm');
+    expect(find('5х10')).toContain('Mix 5x10 mm');
+  });
+  it("qisman yozilgan so'z (prefiks)", () => {
+    expect(find('pol arr')).toEqual(expect.arrayContaining(["Polvon qo'l arrasi", 'Polvon elektr arra']));
+    expect(find('shtuk')).toEqual(['Shtukaturka 25 kg']);
+  });
+  it('bo\'sh so\'rov — hammasi; begona so\'z — bo\'sh', () => {
+    expect(find('  ')).toHaveLength(names.length);
+    expect(find('zzzzqqq')).toEqual([]);
+  });
+  it("hammasi topilmasa bitta so'zni tashlab qidiradi", () => {
+    expect(find('polvon xyzxyz')).toContain("Polvon qo'l arrasi");
+  });
+  it('kodlar: SKU/shtrix-kod bo\'yicha', () => {
+    const items = [
+      { n: 'A', code: 'AB-120', bc: '4780001' },
+      { n: 'B', code: 'ZZ-9', bc: '4780002' },
+    ];
+    const r = rank(items, '4780002', (x) => makeDoc([x.n], [x.code], [x.code, x.bc]));
+    expect(r.map((x) => x.n)).toEqual(['B']);
+    expect(rank(items, 'ab-12', (x) => makeDoc([x.n], [x.code], [x.code, x.bc])).map((x) => x.n)).toEqual(['A']);
+  });
+});
+
+describe('matchesText', () => {
+  it('ism va tartib', () => {
+    expect(matchesText('akbar aliyev', 'Aliyev Akbar')).toBe(true);
+    expect(matchesText('Акбар', 'Akbar Karimov')).toBe(true);
+    expect(matchesText('bobur', 'Akbar Karimov')).toBe(false);
+  });
+});
+
+describe('tokenRegex', () => {
+  const re = (t: string) => new RegExp(tokenRegex(foldTokens(t)[0]), 'i');
+  it('SQL regex imlo variantlarini qamraydi', () => {
+    expect(re('polvon').test('Полвон')).toBe(true);
+    expect(re('pollwon').test('Polvon arra')).toBe(true);
+    expect(re('kol').test("qo'l arra")).toBe(true);
+    expect(re('kol').test('қўл')).toBe(true);
+    expect(re('arrasi').test('arasi')).toBe(true);
+    expect(re('sement').test('цемент')).toBe(true);
+  });
+});

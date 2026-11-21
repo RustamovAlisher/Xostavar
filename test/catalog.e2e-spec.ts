@@ -20,6 +20,23 @@ describe('catalog (TZ 7.3, 9.4)', () => {
     ...over,
   });
 
+  describe('aqlli qidiruv (?q=)', () => {
+    it("pollwon arrasi → «Polvon qo'l arrasi»: imlo, kirill, tartib, xato, variant/SKU/shtrix-kod", async () => {
+      const tag = uniq('').replace(/\W/g, '').toLowerCase().slice(-6); // test uchun noyob (ro'yxat boshqa mahsulotlar bilan to'lmasin)
+      const mk = await s.admin.post('/products', {
+        name: `Polvon qo'l arrasi ${tag}`, categoryId: s.cats['Armatura'], baseUnit: 'piece', isDivisible: false, conversions: [], retailPrice: 50000,
+        isVariable: false, barcodes: [uniq('4790')],
+      }, { idem: false });
+      expect(mk.status).toBe(201);
+      const ids = async (q: string) => ((await s.admin.get(`/products?q=${encodeURIComponent(q)}&pageSize=100`)).body.items as { id: string }[]).map((x) => x.id);
+      for (const q of [`pollwon arrasi ${tag}`, `arrasi qo'l polvon ${tag}`, `ПОЛВОН қўл ${tag}`, `polwan arasi ${tag}`, `kol arra polvon ${tag}`, mk.body.barcodes[0]]) {
+        expect(await ids(q), q).toContain(mk.body.id);
+      }
+      expect((await ids(`polvon ${tag}`))[0]).toBe(mk.body.id);
+      expect(await ids('zzzzqqqxxx')).toEqual([]);
+    });
+  });
+
   describe('yaratish', () => {
     it('variantli mahsulot: avto SKU (ota va variant), konversiyalar, shtrix-kodlar; javob frontend Product shaklida', async () => {
       const body = armBody();

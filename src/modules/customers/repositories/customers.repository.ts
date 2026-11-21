@@ -3,6 +3,7 @@ import { and, asc, desc, eq, gt, isNull, like, lt, ne, or, sql } from 'drizzle-o
 import { DB, type Db, type DbOrTx } from '../../../db/db.module.js';
 import { customerGroups, customers, debtLedger } from '../../../entities/index.js';
 import type { CustomerListQuery } from '../dto/customers.dto.js';
+import { foldTokens, tokenRegex } from '../../../common/search.js';
 
 export type CustomerRow = typeof customers.$inferSelect;
 export type CustomerInsert = typeof customers.$inferInsert;
@@ -19,13 +20,23 @@ export type CustomerWithGroup = { c: CustomerRow; g: string | null };
 export class CustomersRepository {
   constructor(@Inject(DB) private readonly db: Db) {}
 
+  /** Ism so'zlari alohida (tartib, kirill/lotin, imlo variantlari ahamiyatsiz) yoki telefon raqami (kamida 2 raqam). */
+  private textFilter(raw?: string) {
+    const term = raw?.trim();
+    if (!term) return undefined;
+    const digits = term.replace(/\D/g, '');
+    const toks = foldTokens(term);
+    const byName = toks.length ? and(...toks.map((t) => sql`${customers.name} ~* ${tokenRegex(t)}`)) : sql`lower(${customers.name}) like ${`%${term.toLowerCase()}%`}`;
+    return digits.length >= 2 ? or(byName, like(customers.phone, `%${digits}%`)) : byName;
+  }
+
   /** Ro'yxat: 2 ta so'rov (mijozlar + guruh join, jami). Tartib: muddati o'tganlar, keyin qarz kamayishi bo'yicha. */
   list(q: CustomerListQuery, today: string, tx: DbOrTx = this.db): Promise<[CustomerWithGroup[], number]> {
     const where = and(
       isNull(customers.deletedAt),
       q.hasDebt === 'true' ? gt(customers.totalDebt, 0) : undefined,
       q.overdue === 'true' ? and(gt(customers.totalDebt, 0), lt(customers.dueDate, today)) : undefined,
-      q.q?.trim() ? or(sql`lower(${customers.name}) like ${`%${q.q.trim().toLowerCase()}%`}`, like(customers.phone, `%${q.q.replace(/\D/g, '')}%`).if(q.q.replace(/\D/g, '').length >= 2)) : undefined,
+      this.textFilter(q.q),
     );
     const overdueExpr = sql`(${customers.totalDebt} > 0 and ${customers.dueDate} < ${today}::date)`;
     return Promise.all([

@@ -61,6 +61,8 @@ describe('customers (TZ 7.5, 8.8, 9.8)', () => {
     expect(overdue.some((x) => x.id === b.id)).toBe(false);
     expect((await s.admin.get(`/customers?q=${a.phone.slice(-6)}`)).body.items[0].id).toBe(a.id);
     expect((await s.admin.get('/customers?q=qarzdor%20norm')).body.items[0].id).toBe(b.id);
+    expect((await s.admin.get('/customers?q=norm%20qarzdor')).body.items[0].id).toBe(b.id); // tartib ahamiyatsiz
+    expect((await s.admin.get(`/customers?q=${encodeURIComponent('Қарздор')}`)).body.items.length).toBeGreaterThan(0); // kirill
     await close();
   });
   it('nasiya muddati: muddat o\'tgan mijozga nasiya berilsa yangi muddat = bugun + N; o\'tmagan va uzoqroq bo\'lsa saqlanadi', async () => {
