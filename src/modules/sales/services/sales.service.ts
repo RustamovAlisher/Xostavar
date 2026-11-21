@@ -218,11 +218,19 @@ export class SalesService {
       const b = await this.repo.lockBranch(tx, branchId);
       const number = await this.nextNumber(tx, branchId, b!.code);
       const amount = Math.round(dto.amount);
-      const saleId = await this.repo.insertSale(tx, { branchId, number, type: 'debt_payment', shiftId, cashierId: user.id, cashierName: user.name, customerId, customerName: '', paymentSummary: m.code, subtotal: amount, totalAmount: amount, paidAmount: amount });
+      // Savdoga bog'langan to'lov: shu chekning qolgan qarzidan oshmasin (umumiy to'lov — FIFO, tekshiruv applyDebt da)
+      let forSale = '';
+      if (dto.saleId) {
+        const t = await this.customers.saleDebtLeft(tx, customerId, dto.saleId);
+        if (t.left <= 0) throw unprocessable('validation_failed', `Chek ${t.number} bo'yicha qarz yo'q`);
+        if (amount > t.left) throw unprocessable('validation_failed', `Summa chek ${t.number} qarzidan katta (${t.left.toLocaleString('ru-RU')} so'm)`);
+        forSale = `, chek ${t.number} uchun`;
+      }
+      const saleId = await this.repo.insertSale(tx, { branchId, number, type: 'debt_payment', shiftId, cashierId: user.id, cashierName: user.name, customerId, customerName: '', paymentSummary: m.code, subtotal: amount, totalAmount: amount, paidAmount: amount, debtSaleId: dto.saleId ?? null });
       const r = await this.customers.applyDebt(tx, { customerId, branchId, type: 'payment', amount: -amount, refType: 'debt_payment', refId: saleId, userId: user.id, markPaid: true });
       await this.repo.updateSale(tx, saleId, { customerName: r.customer.name, customerDebtAfter: r.after });
       await this.repo.insertPayments(tx, [{ saleId, methodId: m.id, methodCode: m.code, kind: m.kind, amount }]);
-      await this.audit.log(user, { action: 'debt_payment', module: 'Nasiya / Qarz', targetId: customerId, targetName: r.customer.name, branchId, requestId, details: `To'lov: ${amount.toLocaleString('ru-RU')} so'm (${m.label.toLowerCase()}), qoldiq ${r.after.toLocaleString('ru-RU')} so'm` }, tx);
+      await this.audit.log(user, { action: 'debt_payment', module: 'Nasiya / Qarz', targetId: customerId, targetName: r.customer.name, branchId, requestId, details: `To'lov: ${amount.toLocaleString('ru-RU')} so'm (${m.label.toLowerCase()})${forSale}, qoldiq ${r.after.toLocaleString('ru-RU')} so'm` }, tx);
       await this.notify.enqueue(tx, 'debt_payment', saleId, branchId);
       return saleId;
     });

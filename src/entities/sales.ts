@@ -1,4 +1,4 @@
-import { index, integer, jsonb, numeric, pgTable, text, timestamp, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
+import { index, integer, jsonb, numeric, pgTable, text, timestamp, uniqueIndex, uuid, type AnyPgColumn } from 'drizzle-orm/pg-core';
 import { sql } from 'drizzle-orm';
 import { createdAt, id, money, qty } from './common.js';
 import { branches } from './branches.js';
@@ -61,6 +61,8 @@ export const sales = pgTable(
     paidAmount: money('paid_amount').notNull(),
     remainingDebt: money('remaining_debt').notNull().default(0),
     customerDebtAfter: money('customer_debt_after'),
+    /** Qarz to'lovi (type = debt_payment) qaysi nasiya savdo uchun qilingan; null — umumiy (eng eski qarzdan, FIFO). */
+    debtSaleId: uuid('debt_sale_id').references((): AnyPgColumn => sales.id, { onDelete: 'set null' }),
     profit: money('profit').notNull().default(0),
     status: text('status', { enum: ['completed', 'voided'] }).notNull().default('completed'),
     voidedAt: timestamp('voided_at', { withTimezone: true }),
@@ -79,6 +81,7 @@ export const sales = pgTable(
     index('sales_branch_created_idx').on(t.branchId, t.createdAt),
     index('sales_shift_idx').on(t.shiftId),
     index('sales_customer_idx').on(t.customerId),
+    index('sales_debt_sale_idx').on(t.debtSaleId).where(sql`${t.debtSaleId} is not null`),
     index('sales_cashier_idx').on(t.cashierId),
   ],
 );

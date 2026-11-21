@@ -1,5 +1,6 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { and, desc, eq, gte, ilike, isNull, lte, or, sql, type SQL } from 'drizzle-orm';
+import { textQuery } from '../../../common/search-sql.js';
 import { DB, type Db, type DbOrTx } from '../../../db/db.module.js';
 import { auditLogs } from '../../../entities/index.js';
 
@@ -36,9 +37,12 @@ export class AuditRepository {
     if (f.userId) where.push(eq(auditLogs.userId, f.userId));
     if (f.from) where.push(gte(auditLogs.ts, new Date(f.from)));
     if (f.to) where.push(lte(auditLogs.ts, new Date(f.to + 'T23:59:59.999Z')));
-    if (f.q) {
+    if (f.q?.trim()) {
+      // Har so'z alohida, imlo variantlari va sinonimlar bilan (common/search-sql.ts)
+      const all = (col: unknown, res: string[]) => and(...res.map((re) => sql`${col} ~* ${re}`));
+      const cond = textQuery(f.q, (res) => or(all(auditLogs.targetName, res), all(auditLogs.userName, res), all(auditLogs.details, res)));
       const like = `%${f.q.trim()}%`;
-      where.push(or(ilike(auditLogs.targetName, like), ilike(auditLogs.userName, like), ilike(auditLogs.details, like))!);
+      where.push(cond ?? or(ilike(auditLogs.targetName, like), ilike(auditLogs.userName, like), ilike(auditLogs.details, like))!);
     }
     const cond = where.length ? and(...where) : undefined;
     return Promise.all([

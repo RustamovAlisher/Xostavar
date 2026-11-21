@@ -20,6 +20,48 @@ describe('catalog (TZ 7.3, 9.4)', () => {
     ...over,
   });
 
+  describe('aqlli qidiruv (?q=)', () => {
+    it("pollwon arrasi → «Polvon qo'l arrasi»: imlo, kirill, tartib, xato, variant/SKU/shtrix-kod", async () => {
+      const tag = uniq('').replace(/\W/g, '').toLowerCase().slice(-6); // test uchun noyob (ro'yxat boshqa mahsulotlar bilan to'lmasin)
+      const mk = await s.admin.post('/products', {
+        name: `Polvon qo'l arrasi ${tag}`, categoryId: s.cats['Armatura'], baseUnit: 'piece', isDivisible: false, conversions: [], retailPrice: 50000,
+        isVariable: false, barcodes: [uniq('4790')],
+      }, { idem: false });
+      expect(mk.status).toBe(201);
+      const ids = async (q: string) => ((await s.admin.get(`/products?q=${encodeURIComponent(q)}&pageSize=100`)).body.items as { id: string }[]).map((x) => x.id);
+      for (const q of [`pollwon arrasi ${tag}`, `arrasi qo'l polvon ${tag}`, `ПОЛВОН қўл ${tag}`, `polwan arasi ${tag}`, `kol arra polvon ${tag}`, mk.body.barcodes[0]]) {
+        expect(await ids(q), q).toContain(mk.body.id);
+      }
+      expect((await ids(`polvon ${tag}`))[0]).toBe(mk.body.id);
+      expect(await ids('zzzzqqqxxx')).toEqual([]);
+    });
+  });
+
+  describe("mahalliy nomlar va do'kon qidiruv lug'ati", () => {
+    it("ombur → ploskogubtsy (ichki lug'at); do'kon lug'ati saqlanadi va qidiruvga ta'sir qiladi; sotuv/audit qidiruvi", async () => {
+      const tag = uniq('').replace(/\W/g, '').toLowerCase().slice(-6);
+      const mk = await s.admin.post('/products', {
+        name: `Pollwon ploskogubtsy ${tag}`, categoryId: s.cats['Armatura'], baseUnit: 'piece', isDivisible: false, conversions: [], retailPrice: 40000, isVariable: false,
+      }, { idem: false });
+      expect(mk.status).toBe(201);
+      const ids = async (q: string) => ((await s.admin.get(`/products?q=${encodeURIComponent(q)}&pageSize=100`)).body.items as { id: string }[]).map((x) => x.id);
+      for (const q of [`ombur ${tag}`, `polwon ${tag}`, `пассатижи ${tag}`, `ploskegubsa ${tag}`]) expect(await ids(q), q).toContain(mk.body.id);
+      expect(await ids('qisqich')).not.toContain(mk.body.id);
+
+      // Do'kon lug'ati: «qisqich» = ploskogubtsy
+      const before = (await s.admin.get('/settings')).body;
+      const put = await s.admin.put('/settings', { ...before, rules: { ...before.rules, searchSynonyms: ['qisqich, ploskogubtsy', '  ', 'yolg\'iz'] } });
+      expect(put.status).toBe(200);
+      expect(put.body.rules.searchSynonyms).toEqual(['qisqich, ploskogubtsy']); // bo'sh va bitta nomli qatorlar tashlandi
+      expect(await ids('qisqich')).toContain(mk.body.id);
+      // audit (SQL qidiruv) ham sinonim bilan: mahsulot qo'shilgani yozilgan
+      const audit = (await s.admin.get(`/audit-logs?q=${encodeURIComponent(`ombur ${tag}`)}`)).body;
+      expect(audit.total).toBeGreaterThan(0);
+      await s.admin.put('/settings', { ...before, rules: { ...before.rules, searchSynonyms: [] } });
+      expect(await ids('qisqich')).not.toContain(mk.body.id);
+    });
+  });
+
   describe('yaratish', () => {
     it('variantli mahsulot: avto SKU (ota va variant), konversiyalar, shtrix-kodlar; javob frontend Product shaklida', async () => {
       const body = armBody();

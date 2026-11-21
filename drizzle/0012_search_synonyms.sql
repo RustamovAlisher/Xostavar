@@ -1,0 +1,1 @@
+ALTER TABLE "business_rules" ADD COLUMN "search_synonyms" text[] DEFAULT '{}' NOT NULL;

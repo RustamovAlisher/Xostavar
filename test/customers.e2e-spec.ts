@@ -61,6 +61,8 @@ describe('customers (TZ 7.5, 8.8, 9.8)', () => {
     expect(overdue.some((x) => x.id === b.id)).toBe(false);
     expect((await s.admin.get(`/customers?q=${a.phone.slice(-6)}`)).body.items[0].id).toBe(a.id);
     expect((await s.admin.get('/customers?q=qarzdor%20norm')).body.items[0].id).toBe(b.id);
+    expect((await s.admin.get('/customers?q=norm%20qarzdor')).body.items[0].id).toBe(b.id); // tartib ahamiyatsiz
+    expect((await s.admin.get(`/customers?q=${encodeURIComponent('Қарздор')}`)).body.items.length).toBeGreaterThan(0); // kirill
     await close();
   });
   it('nasiya muddati: muddat o\'tgan mijozga nasiya berilsa yangi muddat = bugun + N; o\'tmagan va uzoqroq bo\'lsa saqlanadi', async () => {
@@ -96,5 +98,36 @@ describe('customers (TZ 7.5, 8.8, 9.8)', () => {
     expect((await s.admin.get(`/customers/${c.id}`)).body).toMatchObject({ totalDebtUZS: 15000 });
     expect((await s.kassir.get(`/customers/${c.id}/ledger`)).status).toBe(200); // view_debts
     expect((await s.omborchi.get(`/customers/${c.id}/ledger`)).status).toBe(403);
+  });
+  it("profil: savdolar tarixi, har savdo qarzi; to'lov savdoga bog'lanadi yoki FIFO; jami ledger bilan mos", async () => {
+    const c = (await s.admin.post('/customers', { name: 'Profil Mijoz', phone: phone(), creditLimit: 9_000_000 }, { idem: false })).body;
+    const p = await makeProduct(s.admin, s, { stock: 50, price: 10_000 });
+    const close = await ensureShift(s.admin);
+    const sA = (await s.admin.post('/sales', { lines: [{ productId: p.id, unit: 'piece', qty: 3 }], customerId: c.id, onCredit: true })).body; // 30 000 qarz
+    const sB = (await s.admin.post('/sales', { lines: [{ productId: p.id, unit: 'piece', qty: 2 }], customerId: c.id, onCredit: true })).body; // 20 000 qarz
+    // B savdo uchun 15 000 (bog'langan), keyin umumiy 10 000 (FIFO → A)
+    expect((await s.admin.post(`/customers/${c.id}/payments`, { amount: 15_000, methodId: s.methods.cash, saleId: sB.id })).status).toBe(201);
+    expect((await s.admin.post(`/customers/${c.id}/payments`, { amount: 10_000, methodId: s.methods.cash })).status).toBe(201);
+    // savdo qarzidan katta → 422; boshqa mijozning savdosi → 404
+    expect(code(await s.admin.post(`/customers/${c.id}/payments`, { amount: 6_000, methodId: s.methods.cash, saleId: sB.id }))).toBe('validation_failed');
+    const other = (await s.admin.post('/customers', { name: 'Boshqa', phone: phone() }, { idem: false })).body;
+    expect((await s.admin.post(`/customers/${other.id}/payments`, { amount: 1, methodId: s.methods.cash, saleId: sA.id })).status).toBe(404);
+    await close();
+
+    const r = await s.admin.get(`/customers/${c.id}/profile`);
+    expect(r.status).toBe(200);
+    const b = r.body;
+    expect(b.customer).toMatchObject({ id: c.id, totalDebtUZS: 25_000 });
+    expect(b.stats).toMatchObject({ salesCount: 2, totalSpent: 50_000, debtSalesCount: 2, openDebtSales: 2, paidTotal: 25_000 });
+    const A = b.sales.find((x: { id: string }) => x.id === sA.id);
+    const B = b.sales.find((x: { id: string }) => x.id === sB.id);
+    expect(A.lines[0]).toMatchObject({ qty: 3, lineTotal: 30_000 });
+    expect(A.debt).toMatchObject({ original: 30_000, paid: 10_000, outstanding: 20_000 });
+    expect(B.debt).toMatchObject({ original: 20_000, paid: 15_000, outstanding: 5_000 });
+    expect(B.debt.payments[0]).toMatchObject({ amount: 15_000, targeted: true });
+    expect(A.debt.outstanding + B.debt.outstanding).toBe(b.customer.totalDebtUZS);
+    expect(b.payments).toHaveLength(2);
+    expect(b.payments.find((x: { debtSaleId: string | null }) => x.debtSaleId === sB.id).allocations).toEqual([{ saleId: sB.id, number: sB.number, amount: 15_000 }]);
+    expect((await s.omborchi.get(`/customers/${c.id}/profile`)).status).toBe(403);
   });
 });

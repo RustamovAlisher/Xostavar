@@ -14,6 +14,8 @@ export class CustomerDto {
 export class DebtPaymentDto {
   @IsInt() @Min(1) amount: number;
   @IsUUID() methodId: string;
+  /** Qaysi nasiya savdo uchun (ixtiyoriy). Berilmasa — eng eski qarzdan (FIFO). */
+  @IsOptional() @IsUUID() saleId?: string;
 }
 
 export class CustomerListQuery extends PageQuery {

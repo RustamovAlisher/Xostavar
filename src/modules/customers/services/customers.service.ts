@@ -11,6 +11,7 @@ import { SettingsService } from '../../settings/services/settings.service.js';
 import type { CustomerDto, CustomerListQuery } from '../dto/customers.dto.js';
 import { toCustomerView, type CustomerView } from '../mappers/customers.mapper.js';
 import { CustomersRepository, type CustomerInsert, type DebtLedgerInsert } from '../repositories/customers.repository.js';
+import { allocateDebt } from './debt-allocation.js';
 
 export type { CustomerView } from '../mappers/customers.mapper.js';
 
@@ -125,5 +126,89 @@ export class CustomersService {
     await this.get(id);
     const [items, total] = await this.repo.ledger(id, q);
     return page(items, total, q);
+  }
+
+  /* ───────── Mijoz profili: savdolar, har savdo bo'yicha qarz va to'lovlar ───────── */
+
+  /** Qarzni savdolar bo'yicha taqsimlaydi (ledger qayta o'ynaladi, debt-allocation.ts). */
+  private async allocation(id: string, tx: DbOrTx = this.db) {
+    const [events, pays] = await Promise.all([this.repo.ledgerAll(id, tx), this.repo.debtPayments(id, tx)]);
+    const target = new Map(pays.map((p) => [p.id, p.debtSaleId]));
+    return { ...allocateDebt(events, (pid) => target.get(pid)), pays };
+  }
+
+  /** Bitta nasiya savdoning qolgan qarzi (to'lovni savdoga bog'lashda tekshirish; mijoz qatorini qulflaydi). */
+  async saleDebtLeft(tx: DbOrTx, customerId: string, saleId: string): Promise<{ number: string; left: number }> {
+    if (!(await this.repo.lockById(tx, customerId))) throw notFound('Mijoz'); // parallel to'lovlar bir-birini ko'rsin
+    const s = await this.repo.findSaleHead(saleId, tx);
+    if (!s || s.customerId !== customerId || s.type !== 'sale') throw notFound('Savdo');
+    if (s.status !== 'completed') throw unprocessable('validation_failed', `Chek ${s.number} bekor qilingan`);
+    const { items } = await this.allocation(customerId, tx);
+    return { number: s.number, left: items.find((i) => i.saleId === saleId)?.outstanding ?? 0 };
+  }
+
+  /** Mijoz kartasi: ma'lumot, statistika, savdolar (qatorlar, to'lovlar, qarz holati), qarz to'lovlari va ularning taqsimoti. */
+  async profile(id: string) {
+    const customer = await this.get(id);
+    const [{ items, bySource, pays }, list, stats] = await Promise.all([
+      this.allocation(id),
+      this.repo.customerSales(id, 500),
+      this.repo.saleStats(id),
+    ]);
+    const ids = list.map((s) => s.id);
+    const [lines, payParts] = await Promise.all([this.repo.saleLinesFor(ids), this.repo.salePaymentsFor(ids)]);
+    const byItem = new Map(items.map((i) => [i.saleId ?? i.key, i]));
+    const payById = new Map(pays.map((p) => [p.id, p]));
+    const numberOf = new Map(list.map((s) => [s.id, s.number]));
+    const group = <T extends { saleId: string }>(rows: T[]) => {
+      const m = new Map<string, Omit<T, 'saleId'>[]>();
+      for (const { saleId, ...rest } of rows) { const a = m.get(saleId) ?? []; a.push(rest); m.set(saleId, a); }
+      return m;
+    };
+    const linesBy = group(lines);
+    const paysBy = group(payParts);
+
+    const salesView = list.map((s) => {
+      const it = byItem.get(s.id);
+      const paidAlloc = it?.allocations.filter((a) => a.kind !== 'void') ?? [];
+      return {
+        id: s.id, number: s.number, createdAt: s.createdAt.toISOString(), branchId: s.branchId, cashierName: s.cashierName, status: s.status,
+        voidReason: s.voidReason, subtotal: s.subtotal, discountAmount: s.discountAmount, totalAmount: s.totalAmount, paidAmount: s.paidAmount,
+        lines: linesBy.get(s.id) ?? [],
+        payments: paysBy.get(s.id) ?? [],
+        debt: s.remainingDebt > 0
+          ? {
+              original: s.remainingDebt,
+              paid: paidAlloc.reduce((a, x) => a + x.amount, 0),
+              voided: (it?.allocations ?? []).filter((a) => a.kind === 'void').reduce((a, x) => a + x.amount, 0),
+              outstanding: it?.outstanding ?? 0,
+              payments: paidAlloc.map((a) => {
+                const p = payById.get(a.sourceId);
+                return { id: a.sourceId, kind: a.kind, amount: a.amount, at: a.at.toISOString(), number: p?.number ?? null, method: p?.paymentSummary ?? null, cashierName: p?.cashierName ?? null, targeted: p?.debtSaleId === s.id };
+              }),
+            }
+          : null,
+      };
+    });
+
+    const paymentsView = pays.map((p) => ({
+      id: p.id, number: p.number, createdAt: p.createdAt.toISOString(), branchId: p.branchId, cashierName: p.cashierName, amount: p.amount,
+      method: p.paymentSummary, status: p.status, debtSaleId: p.debtSaleId, debtAfter: p.debtAfter,
+      allocations: (bySource.get(p.id) ?? []).map((a) => ({ saleId: a.saleId, number: a.saleId ? (numberOf.get(a.saleId) ?? null) : null, amount: a.amount })),
+    }));
+
+    const adjustmentsLeft = items.filter((i) => !i.saleId).reduce((a, i) => a + i.outstanding, 0);
+    return {
+      customer,
+      stats: {
+        salesCount: stats.count, voidedCount: stats.voided, totalSpent: Number(stats.spent),
+        firstSaleAt: stats.first ? new Date(stats.first).toISOString() : null, lastSaleAt: stats.last ? new Date(stats.last).toISOString() : null,
+        debtSalesCount: items.filter((i) => i.saleId).length, openDebtSales: items.filter((i) => i.saleId && i.outstanding > 0).length,
+        paidTotal: pays.filter((p) => p.status === 'completed').reduce((a, p) => a + p.amount, 0),
+        adjustmentsLeft,
+      },
+      sales: salesView,
+      payments: paymentsView,
+    };
   }
 }
