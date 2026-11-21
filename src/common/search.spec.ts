@@ -211,6 +211,12 @@ describe('gluxar va tom samorezi (bozor atamalari)', () => {
     expect(rankText(a, 'анкер 100', (n) => [n])[0]).toBe(a[0]);
     expect(rankText(a, 'gluxar', (n) => [n])[0]).toBe(a[0]);
   });
+  it("yo'g'on/толстый → qalin, тонкий → ingichka (variant tanlash)", () => {
+    const v = ['100 mm (100-lik), ingichka', '100 mm (100-lik), qalin'];
+    expect(rankText(v, "100 yo'g'on", (n) => [n])[0]).toBe(v[1]);
+    expect(rankText(v, 'толстый 100', (n) => [n])[0]).toBe(v[1]);
+    expect(rankText(v, 'тонкий 100', (n) => [n])[0]).toBe(v[0]);
+  });
   it('кровельный саморез / krovelniy → tom samorezi', () => {
     expect(f('кровельный саморез')[0]).toBe(cat[0]);
     expect(f('krovelnyy')[0]).toBe(cat[0]);

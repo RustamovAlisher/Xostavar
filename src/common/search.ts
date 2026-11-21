@@ -170,6 +170,8 @@ export const BUILTIN_SYNONYMS: readonly string[] = [
   'anker, анкер, gluxar, glukhar, gluhar, глухарь, shurup-gluxar, lag screw, din 571',
   'krovelniy, krovelnyy, кровельный, tom samorezi, tom samorez, krovlya',
   'olti qirrali, shestigrannik, шестигранник, shestigrannoy, hex',
+  'qalin, yo\'g\'on, yogon, tolstiy, толстый',
+  'ingichka, yupqa, tonkiy, тонкий',
   'o\'tkir, otkir, ostriy, острый, ostry',
   'gipsokarton, gipsakarton, gipskarton, гипсокартон, gkl, гкл, drywall',
   'mix, gvozd, гвоздь, gvozdi, гвозди',
