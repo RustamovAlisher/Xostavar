@@ -193,3 +193,21 @@ describe("samorezlar: press-shayba, uch turi, gipsokarton (bozor atamalari)", ()
     expect(f('саморез гкл')[0]).toBe(cat[2]);
   });
 });
+
+describe('gluxar va tom samorezi (bozor atamalari)', () => {
+  const cat = [
+    'Tom samorezi (krovelniy), rezina shaybali, olti qirrali bosh',
+    "Shurup-gluxar (olti qirrali boshli yog'och shurupi), Ø8 mm, rux qoplamali",
+    "Shurup-gluxar (olti qirrali boshli yog'och shurupi), Ø10 mm, rux qoplamali",
+    "Press-shaybali samorez, o'tkir uchli (rux qoplamali, oq)",
+  ];
+  const f = (q: string) => rankText(cat, q, (n) => [n]);
+  it('глухарь / gluhar 10 → gluxar Ø10', () => {
+    expect(f('глухарь 10')[0]).toBe(cat[2]);
+    expect(f('gluhar 8')[0]).toBe(cat[1]);
+  });
+  it('кровельный саморез / krovelniy → tom samorezi', () => {
+    expect(f('кровельный саморез')[0]).toBe(cat[0]);
+    expect(f('krovelnyy')[0]).toBe(cat[0]);
+  });
+});
