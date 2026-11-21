@@ -248,3 +248,17 @@ describe('tom shaybasi — uchala nom bilan', () => {
     expect(f('krisha samorez')[0]).toBe(cat[1]);
   });
 });
+
+describe('gayka va shayba (DIN 934 / DIN 125)', () => {
+  const cat = ['Gayka olti qirrali (DIN 934), rux qoplamali', 'Shayba yassi oddiy (DIN 125), rux qoplamali',
+    'Tom shaybasi (krisha shaybasi, shifer shaybasi), rezinali, rux qoplamali'];
+  const f = (q: string) => rankText(cat, q, (n) => [n]);
+  it('гайка / gaika → gayka; шайба м10 → oddiy shayba', () => {
+    expect(f('гайка м8')[0]).toBe(cat[0]);
+    expect(f('gaika')[0]).toBe(cat[0]);
+    expect(f('шайба м10')[0]).toBe(cat[1]);
+  });
+  it('krisha shayba — hali ham tom shaybasi', () => {
+    expect(f('krisha shayba')[0]).toBe(cat[2]);
+  });
+});
