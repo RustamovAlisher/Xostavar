@@ -222,3 +222,17 @@ describe('gluxar va tom samorezi (bozor atamalari)', () => {
     expect(f('krovelnyy')[0]).toBe(cat[0]);
   });
 });
+
+describe('anker mix (dyubel-mix) ≠ anker (gluxar)', () => {
+  const cat = ['Anker (shurup-gluxar, olti qirrali bosh, rux qoplamali)', 'Anker mix (dyubel-mix, montaj pistoleti uchun, shaybali)',
+    "Qurilish mixi (gvozd), qora po'lat — GOST 4028-63"];
+  const f = (q: string) => rankText(cat, q, (n) => [n]);
+  it('anker mix / дюбель-гвоздь → anker mix birinchi', () => {
+    expect(f('anker mix 50')[0]).toBe(cat[1]);
+    expect(f('дюбель-гвоздь')[0]).toBe(cat[1]);
+    expect(f('ankermix')[0]).toBe(cat[1]);
+  });
+  it('anker / глухарь → gluxar-anker birinchi', () => {
+    expect(f('глухарь')[0]).toBe(cat[0]);
+  });
+});

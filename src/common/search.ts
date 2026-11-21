@@ -167,6 +167,7 @@ export const BUILTIN_SYNONYMS: readonly string[] = [
   'nivelir, нивелир, uroven, уровень, daraja, darajasi, lazer',
   'samorez, samariz, саморез, shurup, шуруп, burama mix',
   'press shayba, press-shayba, presshayba, пресс-шайба, прессшайба, klop, клоп, shaybali',
+  'anker mix, anker-mix, ankermix, dyubel mix, dyubel-mix, дюбель-гвоздь, дюбель гвоздь, montaj mixi, pistolet mixi',
   'anker, анкер, gluxar, glukhar, gluhar, глухарь, shurup-gluxar, lag screw, din 571',
   'krovelniy, krovelnyy, кровельный, tom samorezi, tom samorez, krovlya',
   'olti qirrali, shestigrannik, шестигранник, shestigrannoy, hex',
