@@ -236,3 +236,15 @@ describe('anker mix (dyubel-mix) ≠ anker (gluxar)', () => {
     expect(f('глухарь')[0]).toBe(cat[0]);
   });
 });
+
+describe('tom shaybasi — uchala nom bilan', () => {
+  const cat = ['Tom shaybasi (krisha shaybasi, shifer shaybasi), rezinali, rux qoplamali',
+    'Tom samorezi (krovelniy), rezina shaybali, olti qirrali bosh', 'Delixi CDB6PLEi differensial avtomat 1P+N, 30 mA'];
+  const f = (q: string) => rankText(cat, q, (n) => [n]);
+  it("tom / krisha / shifer shaybasi va ruscha → shayba birinchi", () => {
+    for (const q of ['tom shaybasi', 'krisha shayba', 'shifer shaybasi', 'кровельная шайба', 'шайба для шифера', 'krisha shaybasi']) expect(f(q)[0], q).toBe(cat[0]);
+  });
+  it('krisha samorez → tom samorezi', () => {
+    expect(f('krisha samorez')[0]).toBe(cat[1]);
+  });
+});
