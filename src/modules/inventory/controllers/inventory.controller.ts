@@ -3,7 +3,7 @@ import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { BranchId, BranchScoped, CurrentUser, Perms, Req, requestIdOf, type AuthRequest, type AuthUser } from '../../../common/decorators/auth-context.js';
 import { Idempotent } from '../../../common/interceptors/idempotency.interceptor.js';
 import { CatalogService } from '../../catalog/services/catalog.service.js';
-import { MovementsQuery, StockAdjustDto, StockInDto, StockInListQuery, StockLevelPatchDto } from '../dto/inventory.dto.js';
+import { MovementsQuery, StockAdjustDto, StockInDto, StockInLineEditDto, StockInListQuery, StockLevelPatchDto } from '../dto/inventory.dto.js';
 import { InventoryService } from '../services/inventory.service.js';
 import { ProductListQuery } from '../../catalog/dto/catalog.dto.js';
 
@@ -42,6 +42,13 @@ export class InventoryController {
   @Perms('view_inventory')
   receipts(@BranchId() branchId: string, @Query() q: StockInListQuery) {
     return this.inventory.listReceipts(branchId, q);
+  }
+
+  /** Kirim qatorini tahrirlash: miqdor, birlik, tannarx, hujjat ma'lumotlari (qoldiq va o'rtacha tannarx qayta hisoblanadi). */
+  @Patch('stock-in/lines/:id')
+  @Perms('stock_in')
+  editLine(@CurrentUser() u: AuthUser, @BranchId() branchId: string, @Req() req: AuthRequest, @Param('id', ParseUUIDPipe) id: string, @Body() dto: StockInLineEditDto) {
+    return this.inventory.editReceiptLine(u, branchId, id, dto, requestIdOf(req));
   }
 
   @Get('stock-in/:id')

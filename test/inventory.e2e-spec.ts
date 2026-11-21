@@ -1,5 +1,5 @@
 import { INestApplication } from '@nestjs/common';
-import { as, code, createApp, makeProduct, rawDb, seeded, uniq, type Client, type Seeded } from './helpers.js';
+import { as, code, createApp, ensureShift, makeProduct, rawDb, seeded, uniq, type Client, type Seeded } from './helpers.js';
 
 describe('inventory (TZ 7.4, 8.5, 8.6, 9.5)', () => {
   let app: INestApplication;
@@ -154,5 +154,57 @@ describe('inventory (TZ 7.4, 8.5, 8.6, 9.5)', () => {
     expect(r.status).toBe(201);
     expect((await o.get(`/products/${p.id}`)).body).not.toHaveProperty('costPrice');
     expect((await s.admin.get(`/products/${p.id}`)).body.costPrice).toBe(777);
+  });
+
+  describe('kirimni tahrirlash (PATCH /stock-in/lines/:id)', () => {
+    it("miqdor va tannarx xatosi tuzatiladi: qoldiq, o'rtacha tannarx, hujjat jami, jurnal yaxlitligi, audit diff", async () => {
+      const p = await makeProduct(s.admin, s, { stock: 100, cost: 1000 }); // 100 @ 1000
+      const r = (await s.admin.post('/stock-in', { supplierName: 'Eski', invoice: 'A-1', lines: [{ productId: p.id, unit: 'piece', qty: 10, costPerUnit: 2000 }] })).body;
+      const lineId = r.lines[0].id;
+      expect((await s.admin.get(`/products/${p.id}`)).body.stock).toBe(110);
+
+      // aslida 100 dona @ 2000 kelgan edi, yetkazib beruvchi ham boshqa
+      const e = await s.admin.patch(`/stock-in/lines/${lineId}`, { qty: 100, costPerUnit: 2000, supplierName: 'Yangi', invoice: 'B-2', reason: 'xato kiritilgan' });
+      expect(e.status).toBe(200);
+      expect(e.body).toMatchObject({ supplierName: 'Yangi', invoice: 'B-2', totalCost: 200_000 });
+      expect(e.body.lines[0]).toMatchObject({ qty: 100, qtyBase: 100, costPerUnit: 2000, totalCost: 200_000 });
+      expect((await s.admin.get(`/products/${p.id}`)).body).toMatchObject({ stock: 200, costPrice: 1500 }); // (100×1000 + 100×2000)/200
+
+      // jurnal: stock = Σ harakatlar; tahrir +90 bilan yozilgan
+      const m = (await s.admin.get(`/stock-movements?productId=${p.id}&pageSize=50`)).body.items as { qtyBase: number; balanceAfter: number; refType: string }[];
+      expect(m[0]).toMatchObject({ qtyBase: 90, balanceAfter: 200, refType: 'stock_receipt_edit' });
+      expect(m.reduce((a, x) => a + x.qtyBase, 0)).toBe(200);
+
+      // faqat tannarx (miqdor o'zgarmaydi → harakat yozilmaydi)
+      await s.admin.patch(`/stock-in/lines/${lineId}`, { costPerUnit: 1000 });
+      expect((await s.admin.get(`/products/${p.id}`)).body).toMatchObject({ stock: 200, costPrice: 1000 });
+      expect((await s.admin.get(`/stock-movements?productId=${p.id}&pageSize=50`)).body.total).toBe(m.length);
+
+      // audit: oldin/keyin
+      const logs = (await s.admin.get(`/audit-logs?q=${encodeURIComponent(`Kirim №${r.number} tahrirlandi`)}&pageSize=5`)).body.items as { details: string; diff: { after: Record<string, unknown> } }[];
+      expect(logs).toHaveLength(2); // ikki tahrir
+      expect(logs[0].details).toMatch(/tannarx 2\s000 → 1\s000 so'm\/dona/);
+      const log = logs[1];
+      expect(log.details).toMatch(/miqdor 10 dona → 100 dona \(qoldiq \+90 dona\)/);
+      expect(log.diff.after).toMatchObject({ hujjat: 'B-2', 'yetkazib beruvchi': 'Yangi' });
+    });
+
+    it("sotilgan kirimni qoldiqdan ko'p kamaytirib bo'lmaydi; birlik xatosi; huquq va filial", async () => {
+      const p = await makeProduct(s.admin, s, { price: 5000 });
+      const r = (await s.admin.post('/stock-in', { lines: [{ productId: p.id, unit: 'piece', qty: 10, costPerUnit: 1000 }] })).body;
+      const lineId = r.lines[0].id;
+      const close = await ensureShift(s.admin);
+      expect((await s.admin.post('/sales', { lines: [{ productId: p.id, unit: 'piece', qty: 8 }], payments: [{ methodId: s.methods.cash, amount: 40000 }] })).status).toBe(201);
+      await close();
+      // 10 → 1: 9 ga kamaytirish kerak, omborda 2 qolgan
+      expect(code(await s.admin.patch(`/stock-in/lines/${lineId}`, { qty: 1 }))).toBe('insufficient_stock');
+      expect((await s.admin.patch(`/stock-in/lines/${lineId}`, { qty: 8 })).status).toBe(200); // 2 ga kamaydi → 0
+      expect((await s.admin.get(`/products/${p.id}`)).body.stock).toBe(0);
+      expect(code(await s.admin.patch(`/stock-in/lines/${lineId}`, { unit: 'kg' }))).toBe('unit_not_allowed');
+      expect((await s.buxgalter.patch(`/stock-in/lines/${lineId}`, { qty: 9 })).status).toBe(403); // stock_in huquqi yo'q
+      const other = (await s.admin.post('/branches', { name: uniq('Filial ') }, { idem: false })).body.id;
+      expect(code(await s.admin.at(other).patch(`/stock-in/lines/${lineId}`, { qty: 9 }))).toBe('branch_forbidden');
+      expect((await s.admin.patch(`/stock-in/lines/00000000-0000-0000-0000-000000000000`, { qty: 1 })).status).toBe(404);
+    });
   });
 });

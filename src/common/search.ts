@@ -25,7 +25,8 @@ const CYR: Record<string, string> = {
 
 /** Matnni normallashtirib so'zlarga (tokenlarga) ajratadi. */
 export function foldTokens(input: string): string[] {
-  let s = (input ?? '').normalize('NFKC').toLowerCase();
+  // № ni NFKC «No» ga aylantiradi — matnda bunday harflar yo'q (SQL regex ham topa olmaydi), shuning uchun ajratuvchi
+  let s = (input ?? '').replace(/№/g, ' ').normalize('NFKC').toLowerCase();
   s = s.replace(/(\d)\s*[x×*х]\s*(?=\d)/g, '$1 '); // 5x10, 5х10, 5*10 → 5 10
   s = Array.from(s, (ch) => CYR[ch] ?? ch).join('');
   s = s.normalize('NFD').replace(/\p{M}/gu, '').replace(APOS, '');

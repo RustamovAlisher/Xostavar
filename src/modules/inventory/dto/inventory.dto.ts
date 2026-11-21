@@ -21,6 +21,16 @@ export class StockInDto {
   @IsArray() @ArrayMinSize(1) @ArrayMaxSize(200) @ValidateNested({ each: true }) @Type(() => StockInLineDto) lines: StockInLineDto[];
 }
 
+/** Kirim qatorini tahrirlash (PATCH /stock-in/lines/:id): berilmagan maydon o'zgarmaydi. */
+export class StockInLineEditDto {
+  @IsOptional() @IsNumber() @Min(0.0001) qty?: number;
+  @IsOptional() @Matches(/^[a-z0-9_]{1,20}$/) unit?: string;
+  @ApiPropertyOptional({ description: "Shu birlik uchun tannarx, so'm (view_cost_price kerak)" }) @IsOptional() @IsInt() @Min(0) costPerUnit?: number;
+  @ApiPropertyOptional({ description: 'Hujjat bo\'yicha (shu kirimning barcha qatorlari uchun)' }) @IsOptional() @IsString() @MaxLength(120) supplierName?: string;
+  @IsOptional() @IsString() @MaxLength(60) invoice?: string;
+  @IsOptional() @IsString() @MaxLength(300) reason?: string;
+}
+
 export class StockAdjustDto {
   @IsUUID() productId: string;
   @IsOptional() @IsUUID() variantId?: string;

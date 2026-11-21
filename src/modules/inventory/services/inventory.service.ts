@@ -5,9 +5,9 @@ import type { AuthUser } from '../../../common/decorators/auth-context.js';
 import { conflict, forbidden, notFound, unprocessable } from '../../../common/errors/app-error.js';
 import { qty4, todayISO } from '../../../common/utils/numbers.js';
 import { page } from '../../../common/utils/pagination.js';
-import { averageCost, factorOf } from '../../../common/utils/pricing.js';
+import { averageCost, editAverageCost, factorOf } from '../../../common/utils/pricing.js';
 import { AuditService } from '../../audit/services/audit.service.js';
-import type { StockAdjustDto, StockInDto, StockInListQuery, StockLevelPatchDto } from '../dto/inventory.dto.js';
+import type { StockAdjustDto, StockInDto, StockInLineEditDto, StockInListQuery, StockLevelPatchDto } from '../dto/inventory.dto.js';
 import { displayName, levelKey, toLevelView, toLevelsAcrossBranches, toLockedLevel, toProductHistory, toReceiptList, toReceiptView, toTargets, type LockedLevel, type Target } from '../mappers/inventory.mapper.js';
 import { InventoryRepository, type LevelKey, type MovementType } from '../repositories/inventory.repository.js';
 
@@ -121,6 +121,78 @@ export class InventoryService {
       return r.id;
     });
     return this.getReceipt(receiptId);
+  }
+
+  /**
+   * Kirim qatorini tahrirlash: miqdor, birlik, tannarx (+ hujjatning yetkazib beruvchisi / raqami).
+   * Qoldiq farq bilan tuzatiladi (jurnalga `stock_in` ±delta, ref `stock_receipt_edit` — stock = Σ harakatlar saqlanadi),
+   * o'rtacha tannarx eski kirimni olib yangisini qo'shib qayta hisoblanadi. Kirimdan sotilgan bo'lsa va kamaytirish
+   * qoldiqni manfiy qilsa — rad etiladi. Faqat shu kirim qilingan filialda.
+   */
+  async editReceiptLine(user: AuthUser, branchId: string, lineId: string, dto: StockInLineEditDto, requestId?: string) {
+    const canCost = user.permissions.includes('view_cost_price');
+    await runTx(this.db, async (tx) => {
+      const b = await this.repo.lockBranch(tx, branchId);
+      if (!b?.active) throw forbidden('Filial nofaol', 'branch_inactive');
+      const row = await this.repo.lockReceiptLine(tx, lineId);
+      if (!row) throw notFound('Kirim qatori');
+      const { line, receipt } = row;
+      if (receipt.branchId !== branchId) throw forbidden("Boshqa filial kirimini tahrirlab bo'lmaydi", 'branch_forbidden');
+      const key: LevelKey = { productId: line.productId, variantId: line.variantId };
+      const t = (await this.loadTargets(tx, [key])).get(levelKey(key));
+      if (!t) throw notFound('Mahsulot');
+      const unit = dto.unit ?? line.unit;
+      const factor = factorOf(t.target, unit);
+      const unitRow = (await this.repo.allUnits(tx)).find((u) => u.id === unit);
+      if (!factor || !unitRow) throw unprocessable('unit_not_allowed', `"${unit}" birligi "${t.product.name}" uchun belgilanmagan`);
+      const qty = qty4(dto.qty ?? Number(line.qty));
+      const qtyBase = qty4(qty * factor);
+      // Tannarx: berilgan bo'lsa (huquq bilan) — shu; birlik almashsa eski asosiy-birlik tannarxi saqlanadi
+      const costPerUnit = dto.costPerUnit != null && canCost
+        ? Math.max(0, Math.round(dto.costPerUnit))
+        : unit === line.unit ? Number(line.costPerUnit) : Math.round(Number(line.costPerBase) * factor);
+      const costPerBase = costPerUnit / factor;
+      const oldBase = Number(line.qtyBase), oldCpb = Number(line.costPerBase);
+
+      const lvl = (await this.lockLevels(tx, branchId, [key], true)).get(levelKey(key))!;
+      const delta = qty4(qtyBase - oldBase);
+      if (lvl.stock + delta < 0) {
+        throw unprocessable('insufficient_stock', `Bu kirimdan sotilgan: omborda ${lvl.stock} ${t.product.baseUnit} qoldi, ${-delta} ga kamaytirib bo'lmaydi`);
+      }
+      const newCost = editAverageCost(lvl.stock, lvl.costPrice, oldBase, oldCpb, qtyBase, costPerBase);
+      if (delta !== 0) {
+        await this.applyMovement(tx, lvl, { branchId, productId: line.productId, variantId: line.variantId, type: 'stock_in', qtyBase: delta, unit, qtyUnit: qty4(delta / factor), costPerBase, refType: 'stock_receipt_edit', refId: receipt.id, userId: user.id, newCost });
+      } else if (newCost !== lvl.costPrice) {
+        await this.repo.incrementStock(tx, lvl.id, 0, newCost);
+      }
+      await this.repo.updateReceiptLine(tx, line.id, { unit, qty, qtyBase, costPerUnit, costPerBase: qty4(costPerBase), totalCost: Math.round(qty * costPerUnit) });
+      await this.repo.updateReceiptHead(tx, receipt.id, {
+        ...(dto.supplierName !== undefined ? { supplierName: dto.supplierName.trim() || null } : {}),
+        ...(dto.invoice !== undefined ? { invoice: dto.invoice.trim() || null } : {}),
+      });
+
+      const units = await this.repo.allUnits(tx);
+      const oldShort = units.find((u) => u.id === line.unit)?.short ?? line.unit;
+      const baseShort = units.find((u) => u.id === t.product.baseUnit)?.short ?? t.product.baseUnit;
+      const before: Record<string, unknown> = { miqdor: `${Number(line.qty)} ${oldShort}` };
+      const after: Record<string, unknown> = { miqdor: `${qty} ${unitRow.short}` };
+      if (canCost) { before.tannarx = Number(line.costPerUnit); after.tannarx = costPerUnit; }
+      if (dto.supplierName !== undefined) { before["yetkazib beruvchi"] = receipt.supplierName; after["yetkazib beruvchi"] = dto.supplierName.trim() || null; }
+      if (dto.invoice !== undefined) { before.hujjat = receipt.invoice; after.hujjat = dto.invoice.trim() || null; }
+      await this.audit.log(user, {
+        action: 'edit', module: 'Mahsulotlar', targetId: line.productId, targetName: line.productName, branchId, requestId,
+        details: `Kirim №${receipt.number} tahrirlandi (${b.name}): ${
+          [
+            before.miqdor !== after.miqdor ? `miqdor ${before.miqdor} → ${after.miqdor} (qoldiq ${delta > 0 ? '+' : ''}${delta} ${baseShort})` : '',
+            canCost && before.tannarx !== after.tannarx ? `tannarx ${Number(before.tannarx).toLocaleString('ru-RU')} → ${costPerUnit.toLocaleString('ru-RU')} so'm/${unitRow.short}` : '',
+            dto.supplierName !== undefined && before['yetkazib beruvchi'] !== after['yetkazib beruvchi'] ? `yetkazib beruvchi: ${after['yetkazib beruvchi'] ?? '—'}` : '',
+            dto.invoice !== undefined && before.hujjat !== after.hujjat ? `hujjat: ${after.hujjat ?? '—'}` : '',
+          ].filter(Boolean).join(', ') || "o'zgarish yo'q"
+        }${dto.reason?.trim() ? `. Sabab: ${dto.reason.trim()}` : ''}`,
+        diff: { before, after },
+      }, tx);
+    });
+    return this.getReceipt((await this.repo.findReceiptLine(lineId))!.receiptId);
   }
 
   async getReceipt(id: string, user?: AuthUser) {

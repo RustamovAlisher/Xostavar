@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { averageCost, calcLine, conversionsOf, factorOf, priceOf, sellableUnits, type PriceTarget } from './pricing.js';
+import { averageCost, editAverageCost, calcLine, conversionsOf, factorOf, priceOf, sellableUnits, type PriceTarget } from './pricing.js';
 
 /** Armatura Ø12 (TZ 21, Ilova B): asosiy birlik metr, 12 500 so'm/m, 1 kg = 1.1261 m, 1 tayoq = 11.7 m. */
 const arm: PriceTarget = {
@@ -120,5 +120,23 @@ describe('O\'rtacha tannarx', () => {
     expect(averageCost(-3, 5000, 50, 7000)).toBe(7000); // manfiy qoldiq 0 deb olinadi
     expect(averageCost(10, null, 5, 100)).toBe(100);
     expect(averageCost(10, null, 5, 0)).toBeNull();
+  });
+});
+
+describe('editAverageCost (kirim tahriri)', () => {
+  it("miqdor xatosi: 100 o'rniga 10 kiritilgan — o'rtacha qayta hisoblanadi", () => {
+    // oldin 100 dona @ 1000 bor edi; kirim 10 @ 2000 → o'rtacha (100*1000+10*2000)/110 = 1090.91
+    const avg = (100 * 1000 + 10 * 2000) / 110;
+    // tahrir: aslida 100 @ 2000 → (100*1000 + 100*2000)/200 = 1500
+    expect(editAverageCost(110, avg, 10, 2000, 100, 2000)).toBe(1500);
+  });
+  it('tannarx xatosi: faqat narx o\'zgaradi', () => {
+    expect(editAverageCost(20, 1500, 10, 2000, 10, 1000)).toBe(1000); // 10@1000 + 10@1000
+  });
+  it('tannarxsiz kirim va tahrirda ham tannarxsiz — o\'zgarmaydi', () => {
+    expect(editAverageCost(50, 700, 10, 0, 20, 0)).toBe(700);
+  });
+  it("hamma qoldiq shu kirimdan (boshqa qoldiq yo'q) — yangi tannarx", () => {
+    expect(editAverageCost(10, 2000, 10, 2000, 12, 2500)).toBe(2500);
   });
 });

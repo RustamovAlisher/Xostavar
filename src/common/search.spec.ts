@@ -30,6 +30,7 @@ describe('fold', () => {
     expect(foldTokens('10mm')).toEqual(['10', 'mm']);
     expect(foldTokens('5x10')).toEqual(['5', '10']);
     expect(foldTokens('5*10 мм')).toEqual(['5', '10', 'mm']);
+    expect(foldTokens('Kirim №12')).toEqual(['kirim', '12']); // № → ajratuvchi (NFKC «No» emas)
   });
 });
 

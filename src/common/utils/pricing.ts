@@ -129,3 +129,19 @@ export function averageCost(oldStock: number, oldCost: number | null, addQty: nu
   if (oldCost == null || s <= 0) return roundTo(costPerBase, 2);
   return roundTo((s * oldCost + addQty * costPerBase) / (s + addQty), 2);
 }
+
+/**
+ * Kirim qatori tahrirlanganda o'rtacha tannarx: eski kirim hissasi olib tashlanib, yangisi qo'shiladi
+ * («reverse and reapply»). Tannarxi 0 bo'lgan kirim joriy o'rtacha bilan baholangan deb olinadi.
+ * Kirimdan keyin sotuv bo'lgan bo'lsa ham to'g'ri yo'nalishda tuzatadi; qolgan qoldiq faqat shu kirimdan bo'lsa — yangi tannarx.
+ */
+export function editAverageCost(stock: number, cost: number | null, oldQty: number, oldCpb: number, newQty: number, newCpb: number): number | null {
+  if (!(oldCpb > 0) && !(newCpb > 0)) return cost; // tannarxsiz kirim o'rtachaga ta'sir qilmagan va qilmaydi
+  const c = cost ?? (oldCpb > 0 ? oldCpb : newCpb);
+  const fallback = newCpb > 0 ? roundTo(newCpb, 2) : cost;
+  const s1 = stock - oldQty; // shu kirimsiz qoldiq
+  const s2 = s1 + newQty;
+  if (s1 <= 0 || s2 <= 0) return fallback;
+  const v2 = stock * c - oldQty * (oldCpb > 0 ? oldCpb : c) + newQty * (newCpb > 0 ? newCpb : c);
+  return v2 > 0 ? roundTo(v2 / s2, 2) : fallback;
+}
