@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { INestApplication } from '@nestjs/common';
 import { code, createApp, ensureShift, makeProduct, seeded, type Seeded, today as todayStr } from './helpers.js';
 
@@ -129,5 +130,43 @@ describe('customers (TZ 7.5, 8.8, 9.8)', () => {
     expect(b.payments).toHaveLength(2);
     expect(b.payments.find((x: { debtSaleId: string | null }) => x.debtSaleId === sB.id).allocations).toEqual([{ saleId: sB.id, number: sB.number, amount: 15_000 }]);
     expect((await s.omborchi.get(`/customers/${c.id}/profile`)).status).toBe(403);
+  });
+  it("telefon ixtiyoriy: bo'sh / +998 / yo'q → telefonsiz mijoz, bir nechtasi yonma-yon; kiritilgan bo'lsa to'liq bo'lishi shart", async () => {
+    const a = await s.kassir.post('/customers', { name: 'Telefonsiz 1' }, { idem: false });
+    const b = await s.kassir.post('/customers', { name: 'Telefonsiz 2', phone: '' }, { idem: false });
+    const c = await s.kassir.post('/customers', { name: 'Telefonsiz 3', phone: '+998 ' }, { idem: false });
+    expect([a.status, b.status, c.status]).toEqual([201, 201, 201]);
+    expect([a.body.phone, b.body.phone, c.body.phone]).toEqual(['', '', '']);
+    expect(code(await s.kassir.post('/customers', { name: 'Yarim', phone: '+998 90 12' }, { idem: false }))).toBe('validation_failed');
+    // tahrirda ham: telefonni olib tashlash, keyin o'chirish
+    const e = await s.admin.patch(`/customers/${a.body.id}`, { name: 'Telefonsiz 1', phone: '', version: a.body.version });
+    expect(e.status).toBe(200);
+    expect((await s.admin.del(`/customers/${a.body.id}`)).status).toBe(204);
+  });
+  it("qo'lda qarz: summa kiritiladi, qarz oshadi, profilda izoh/sana bilan band, to'lov FIFO yopadi; permission va validatsiya", async () => {
+    const c = (await s.admin.post('/customers', { name: 'Eski daftar', creditLimit: 5_000_000 }, { idem: false })).body;
+    const r = await s.kassir.post(`/customers/${c.id}/debts`, { amount: 120_000, note: ' Eski daftardan ', dueDate: '2031-05-01' });
+    expect(r.status).toBe(201);
+    expect(r.body).toMatchObject({ id: c.id, totalDebtUZS: 120_000, dueDate: '2031-05-01' });
+    expect((await s.admin.post(`/customers/${c.id}/debts`, { amount: 30_000 })).body.totalDebtUZS).toBe(150_000);
+    // noto'g'ri summa; ruxsatsiz rol
+    expect((await s.admin.post(`/customers/${c.id}/debts`, { amount: 0 })).status).toBe(400);
+    expect((await s.admin.post(`/customers/${c.id}/debts`, { amount: 1.5 })).status).toBe(400);
+    expect((await s.omborchi.post(`/customers/${c.id}/debts`, { amount: 1000 })).status).toBe(403);
+    expect((await s.admin.post(`/customers/${randomUUID()}/debts`, { amount: 1000 })).status).toBe(404);
+    // to'lov eng eski qo'lda qarzdan yopadi
+    const close = await ensureShift(s.admin);
+    expect((await s.admin.post(`/customers/${c.id}/payments`, { amount: 50_000, methodId: s.methods.cash })).status).toBe(201);
+    await close();
+    const p = (await s.admin.get(`/customers/${c.id}/profile`)).body;
+    expect(p.customer.totalDebtUZS).toBe(100_000);
+    expect(p.stats.adjustmentsLeft).toBe(100_000);
+    expect(p.manualDebts).toHaveLength(2);
+    const first = p.manualDebts.find((m: { note: string | null }) => m.note === 'Eski daftardan');
+    expect(first).toMatchObject({ original: 120_000, outstanding: 70_000 });
+    expect(first.payments[0]).toMatchObject({ kind: 'payment', amount: 50_000 });
+    // qarz jurnalida izoh
+    const led = (await s.admin.get(`/customers/${c.id}/ledger`)).body;
+    expect(led.items.some((x: { type: string; note: string | null }) => x.type === 'adjustment' && x.note === 'Eski daftardan')).toBe(true);
   });
 });

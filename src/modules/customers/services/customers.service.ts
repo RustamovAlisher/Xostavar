@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { Inject, Injectable } from '@nestjs/common';
 import { DB, type Db, type DbOrTx } from '../../../db/db.module.js';
 import { runTx } from '../../../db/tx.js';
@@ -8,7 +9,7 @@ import { page } from '../../../common/utils/pagination.js';
 import { assertVersion } from '../../../common/utils/version.js';
 import { AuditService } from '../../audit/services/audit.service.js';
 import { SettingsService } from '../../settings/services/settings.service.js';
-import type { CustomerDto, CustomerListQuery } from '../dto/customers.dto.js';
+import type { CustomerDto, CustomerListQuery, ManualDebtDto } from '../dto/customers.dto.js';
 import { toCustomerView, type CustomerView } from '../mappers/customers.mapper.js';
 import { CustomersRepository, type CustomerInsert, type DebtLedgerInsert } from '../repositories/customers.repository.js';
 import { allocateDebt } from './debt-allocation.js';
@@ -43,7 +44,9 @@ export class CustomersService {
     if (dup) throw conflict('duplicate_code', `Bu telefon raqami allaqachon mavjud: ${dup.name}`);
   }
 
-  private parsePhone(raw: string) {
+  /** Telefon ixtiyoriy: bo'sh bo'lsa null; kiritilgan bo'lsa to'liq bo'lishi shart. */
+  private parsePhone(raw: string | null | undefined): string | null {
+    if (!raw || !raw.replace(/\D/g, '').replace(/^998/, '')) return null;
     const phone = canonicalPhone(raw);
     if (!phone) throw unprocessable('validation_failed', "Telefon raqamini to'liq kiriting (+998 va 9 ta raqam)");
     return phone;
@@ -59,7 +62,7 @@ export class CustomersService {
     const phone = this.parsePhone(dto.phone);
     const rules = await this.settings.getRules();
     const id = await runTx(this.db, async (tx) => {
-      await this.assertPhoneFree(tx, phone);
+      if (phone) await this.assertPhoneFree(tx, phone);
       const groupId = dto.groupId ?? (await this.repo.firstGroupId(tx));
       const c = await this.repo.insert(tx, { name: dto.name.trim(), phone, groupId, creditLimit: dto.creditLimit ?? rules.defaultCreditLimit, dueDate: dto.dueDate ?? addDays(todayISO(), rules.defaultCreditDays) });
       await this.audit.log(user, { action: 'add', module: 'Nasiya / Qarz', targetId: c.id, targetName: c.name, details: `Yangi mijoz, limit ${c.creditLimit.toLocaleString('ru-RU')} so'm` }, tx);
@@ -74,7 +77,7 @@ export class CustomersService {
       const old = await this.repo.lockById(tx, id);
       if (!old) throw notFound('Mijoz');
       assertVersion(old.version, dto.version, 'Mijoz');
-      await this.assertPhoneFree(tx, phone, id);
+      if (phone) await this.assertPhoneFree(tx, phone, id);
       // total_debt faqat ledger orqali o'zgaradi; limit qarzdan kichik bo'lishi mumkin (keyingi nasiya rad etiladi)
       const next = { name: dto.name.trim(), phone, groupId: dto.groupId === undefined ? old.groupId : dto.groupId, creditLimit: dto.creditLimit ?? old.creditLimit, dueDate: dto.dueDate === undefined ? old.dueDate : dto.dueDate };
       await this.repo.update(tx, id, { ...next, version: old.version + 1 });
@@ -100,7 +103,7 @@ export class CustomersService {
   /* ───────── Qarz jurnali (sotuv va to'lov servisi chaqiradi) ───────── */
 
   /** Mijoz qatorini qulflab qarzni o'zgartiradi, ledger yozadi. Qaytaradi: yangi qarz. */
-  async applyDebt(tx: DbOrTx, p: { customerId: string; branchId: string; type: DebtLedgerInsert['type']; amount: number; refType: string; refId: string; userId: string; dueDays?: number; markPaid?: boolean; capAtZero?: boolean }) {
+  async applyDebt(tx: DbOrTx, p: { customerId: string; branchId: string; type: DebtLedgerInsert['type']; amount: number; refType: string; refId: string; userId: string; dueDays?: number; markPaid?: boolean; capAtZero?: boolean; note?: string | null }) {
     const c = await this.repo.lockById(tx, p.customerId);
     if (!c) throw notFound('Mijoz');
     let amount = p.amount;
@@ -118,8 +121,28 @@ export class CustomersService {
     // Balans atomar yangilanadi (o'qib-yozish emas): qulf bilan birga ikki qavat himoya; natija ledger ga yoziladi
     const balance = await this.repo.addDebt(tx, c.id, amount, set);
     if (balance == null) throw unprocessable('validation_failed', `Summa qarzdan katta (${c.totalDebt.toLocaleString('ru-RU')} so'm)`);
-    if (amount !== 0) await this.repo.insertLedger(tx, { customerId: c.id, branchId: p.branchId, type: p.type, amount, balanceAfter: balance, refType: p.refType, refId: p.refId, userId: p.userId });
+    if (amount !== 0) await this.repo.insertLedger(tx, { customerId: c.id, branchId: p.branchId, type: p.type, amount, balanceAfter: balance, refType: p.refType, refId: p.refId, userId: p.userId, note: p.note ?? null });
     return { before: balance - amount, after: balance, applied: amount, customer: c };
+  }
+
+  /** Qo'lda qarz qo'shish (savdosiz: eski daftar, kelishuv): qarz oshadi, `adjustment` yozuvi ochiladi, kassaga tegmaydi. */
+  async addManualDebt(user: AuthUser, branchId: string, id: string, dto: ManualDebtDto): Promise<CustomerView> {
+    const amount = Math.round(dto.amount);
+    const note = dto.note?.trim() || null;
+    const rules = await this.settings.getRules();
+    await runTx(this.db, async (tx) => {
+      const r = await this.applyDebt(tx, { customerId: id, branchId, type: 'adjustment', amount, refType: 'manual', refId: randomUUID(), userId: user.id, note });
+      if (r.after > 0) {
+        const due = dto.dueDate ?? (r.customer.dueDate ? null : addDays(todayISO(), rules.defaultCreditDays));
+        if (due) await this.repo.setDueDate(tx, id, due);
+      }
+      await this.audit.log(user, {
+        action: 'edit', module: 'Nasiya / Qarz', targetId: id, targetName: r.customer.name, branchId,
+        details: `Qo'lda qarz qo'shildi: +${amount.toLocaleString('ru-RU')} so'm${note ? ` (${note})` : ''}, jami ${r.after.toLocaleString('ru-RU')} so'm`,
+        diff: { before: { qarz: r.before }, after: { qarz: r.after } },
+      }, tx);
+    });
+    return this.get(id);
   }
 
   async ledger(id: string, q: { page: number; pageSize: number; offset: number }) {
@@ -150,11 +173,13 @@ export class CustomersService {
   /** Mijoz kartasi: ma'lumot, statistika, savdolar (qatorlar, to'lovlar, qarz holati), qarz to'lovlari va ularning taqsimoti. */
   async profile(id: string) {
     const customer = await this.get(id);
-    const [{ items, bySource, pays }, list, stats] = await Promise.all([
+    const [{ items, bySource, pays }, list, stats, ledgerRows] = await Promise.all([
       this.allocation(id),
       this.repo.customerSales(id, 500),
       this.repo.saleStats(id),
+      this.repo.ledgerAll(id),
     ]);
+    const noteOf = new Map(ledgerRows.map((r) => [r.id, r.note]));
     const ids = list.map((s) => s.id);
     const [lines, payParts] = await Promise.all([this.repo.saleLinesFor(ids), this.repo.salePaymentsFor(ids)]);
     const byItem = new Map(items.map((i) => [i.saleId ?? i.key, i]));
@@ -197,6 +222,14 @@ export class CustomersService {
       allocations: (bySource.get(p.id) ?? []).map((a) => ({ saleId: a.saleId, number: a.saleId ? (numberOf.get(a.saleId) ?? null) : null, amount: a.amount })),
     }));
 
+    // Qo'lda kiritilgan qarzlar (savdosiz bandlar): qachon, qancha, izoh, qanchasi yopilgan
+    const manualDebts = items.filter((i) => !i.saleId).map((i) => {
+      const ledgerId = i.key.replace(/^adj:/, '');
+      return {
+        id: ledgerId, createdAt: i.at.toISOString(), note: noteOf.get(ledgerId) ?? null, original: i.original, outstanding: i.outstanding,
+        payments: i.allocations.map((a) => ({ id: a.sourceId, kind: a.kind, amount: a.amount, at: a.at.toISOString(), number: payById.get(a.sourceId)?.number ?? null })),
+      };
+    }).sort((a, b) => b.createdAt.localeCompare(a.createdAt));
     const adjustmentsLeft = items.filter((i) => !i.saleId).reduce((a, i) => a + i.outstanding, 0);
     return {
       customer,
@@ -209,6 +242,7 @@ export class CustomersService {
       },
       sales: salesView,
       payments: paymentsView,
+      manualDebts,
     };
   }
 }

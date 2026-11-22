@@ -4,7 +4,7 @@ import { BranchId, BranchScoped, CurrentUser, Perms, Req, requestIdOf, type Auth
 import { Idempotent } from '../../../common/interceptors/idempotency.interceptor.js';
 import { PageQuery } from '../../../common/utils/pagination.js';
 import { SalesService } from '../../sales/services/sales.service.js';
-import { CustomerDto, CustomerListQuery, DebtPaymentDto } from '../dto/customers.dto.js';
+import { CustomerDto, CustomerListQuery, DebtPaymentDto, ManualDebtDto } from '../dto/customers.dto.js';
 import { CustomersService } from '../services/customers.service.js';
 
 @ApiTags('customers')
@@ -59,6 +59,15 @@ export class CustomersController {
   @HttpCode(204)
   remove(@CurrentUser() u: AuthUser, @Param('id', ParseUUIDPipe) id: string) {
     return this.customers.remove(u, id);
+  }
+
+  /** Qo'lda qarz qo'shish (savdosiz): kassaga tegmaydi, qarz jurnaliga `adjustment` yoziladi. */
+  @Post(':id/debts')
+  @Perms('give_debt')
+  @BranchScoped()
+  @Idempotent()
+  addDebt(@CurrentUser() u: AuthUser, @BranchId() branchId: string, @Param('id', ParseUUIDPipe) id: string, @Body() dto: ManualDebtDto) {
+    return this.customers.addManualDebt(u, branchId, id, dto);
   }
 
   /** Qarz to'lovi — filial kassasiga tushadi, `debt_payment` chek yoziladi (TZ 8.8). */

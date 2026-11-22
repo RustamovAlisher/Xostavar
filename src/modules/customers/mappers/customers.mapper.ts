@@ -20,7 +20,7 @@ export interface CustomerView {
 /** Mijoz qatori + guruh nomi → API ko'rinishi; `overdue` bugungi sanaga nisbatan hisoblanadi. */
 export function toCustomerView(c: CustomerRow, groupName: string | null, today = todayISO()): CustomerView {
   return {
-    id: c.id, name: c.name, phone: c.phone, groupId: c.groupId, role: groupName ?? '', totalDebtUZS: c.totalDebt, creditLimitUZS: c.creditLimit,
+    id: c.id, name: c.name, phone: c.phone ?? '', groupId: c.groupId, role: groupName ?? '', totalDebtUZS: c.totalDebt, creditLimitUZS: c.creditLimit,
     dueDate: c.dueDate, lastPaidDate: c.lastPaidDate, overdue: c.totalDebt > 0 && !!c.dueDate && c.dueDate < today, version: c.version, createdAt: c.createdAt,
   };
 }

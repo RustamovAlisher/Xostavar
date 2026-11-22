@@ -72,8 +72,8 @@ export class CustomersRepository {
   }
 
   /** Yumshoq o'chirish: telefon band bo'lib qolmasligi uchun unikal qiymat bilan belgilanadi. */
-  softDelete(tx: DbOrTx, id: string, phone: string) {
-    return tx.update(customers).set({ deletedAt: new Date(), phone: `${phone}#del#${Date.now()}` }).where(eq(customers.id, id));
+  softDelete(tx: DbOrTx, id: string, phone: string | null) {
+    return tx.update(customers).set({ deletedAt: new Date(), phone: phone ? `${phone}#del#${Date.now()}` : null }).where(eq(customers.id, id));
   }
 
   /**
@@ -105,8 +105,13 @@ export class CustomersRepository {
 
   /** Butun qarz jurnali (seq o'sishi) — savdolar bo'yicha taqsimlash uchun. */
   ledgerAll(customerId: string, tx: DbOrTx = this.db) {
-    return tx.select({ id: debtLedger.id, seq: debtLedger.seq, type: debtLedger.type, amount: debtLedger.amount, refId: debtLedger.refId, createdAt: debtLedger.createdAt })
+    return tx.select({ id: debtLedger.id, seq: debtLedger.seq, type: debtLedger.type, amount: debtLedger.amount, refId: debtLedger.refId, createdAt: debtLedger.createdAt, note: debtLedger.note })
       .from(debtLedger).where(eq(debtLedger.customerId, customerId)).orderBy(asc(debtLedger.seq));
+  }
+
+  /** Muddatni aniq sanaga qo'yadi (qo'lda qarz kiritishda). */
+  setDueDate(tx: DbOrTx, id: string, dueDate: string) {
+    return tx.update(customers).set({ dueDate }).where(eq(customers.id, id));
   }
 
   /** Mijozning qarz to'lovi cheklari (eng yangisi birinchi). */

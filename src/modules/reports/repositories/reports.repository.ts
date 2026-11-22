@@ -220,7 +220,7 @@ export class ReportsRepository {
   /** Qarzdorlar, muddati o'tgan kunlari bilan (eng ko'p kechikkan birinchi). */
   debtors(today: string, tx: DbOrTx = this.db) {
     return tx
-      .select({ id: customers.id, name: customers.name, phone: customers.phone, totalDebt: customers.totalDebt, creditLimit: customers.creditLimit, dueDate: customers.dueDate, lastPaidDate: customers.lastPaidDate, overdueDays: sql<number>`greatest(0, ${today}::date - ${customers.dueDate})::int` })
+      .select({ id: customers.id, name: customers.name, phone: sql<string>`coalesce(${customers.phone}, '')`, totalDebt: customers.totalDebt, creditLimit: customers.creditLimit, dueDate: customers.dueDate, lastPaidDate: customers.lastPaidDate, overdueDays: sql<number>`greatest(0, ${today}::date - ${customers.dueDate})::int` })
       .from(customers)
       .where(and(isNull(customers.deletedAt), sql`${customers.totalDebt} > 0`))
       .orderBy(desc(sql`${today}::date - ${customers.dueDate}`), desc(customers.totalDebt));

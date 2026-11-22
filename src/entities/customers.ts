@@ -11,8 +11,8 @@ export const customers = pgTable(
   {
     id: id(),
     name: text('name').notNull(),
-    /** Faqat raqamlar, 998XXXXXXXXX. */
-    phone: text('phone').notNull(),
+    /** Faqat raqamlar, 998XXXXXXXXX. Ixtiyoriy: kiritilmasa null (unikal indeks null larni bir-biridan farqlaydi). */
+    phone: text('phone'),
     groupId: uuid('group_id').references(() => customerGroups.id, { onDelete: 'set null' }),
     creditLimit: money('credit_limit').notNull().default(0),
     dueDate: date('due_date'),
@@ -50,6 +50,8 @@ export const debtLedger = pgTable(
     balanceAfter: money('balance_after').notNull(),
     refType: text('ref_type'),
     refId: uuid('ref_id'),
+    /** Qo'lda kiritilgan qarz (adjustment) uchun izoh. */
+    note: text('note'),
     userId: uuid('user_id').references(() => users.id, { onDelete: 'set null' }),
     createdAt: createdAt(),
   },
