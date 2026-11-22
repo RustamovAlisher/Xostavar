@@ -14,6 +14,10 @@ export class SaleLineDto {
   @Matches(/^[a-z0-9_]{1,20}$/) unit: string;
   @IsNumber() @Min(0) qty: number;
   @IsOptional() @IsArray() @ArrayMaxSize(50) @ValidateNested({ each: true }) @Type(() => CutDto) cuts?: CutDto[];
+  @ApiPropertyOptional({ description: "Kassir o'zgartirgan narx (shu birlik uchun, so'm). Katalog narxi o'zgarmaydi" })
+  @IsOptional() @IsInt() @Min(1) unitPrice?: number;
+  @ApiPropertyOptional({ description: "Kassir o'zgartirgan qator summasi (so'm). Berilsa unitPrice dan ustun" })
+  @IsOptional() @IsInt() @Min(1) lineTotal?: number;
 }
 
 export class SalePaymentDto {

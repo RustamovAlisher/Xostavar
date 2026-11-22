@@ -11,6 +11,9 @@ export interface QuotedLine extends LineCalc {
   categoryId: string;
   available: number | null;
   costPerBase: number | null;
+  /** Katalog bo'yicha narx va summa (kassir narxni o'zgartirgan bo'lsa farqni bilish uchun) */
+  listUnitPrice: number;
+  listTotal: number;
 }
 
 export interface QuoteWarning {

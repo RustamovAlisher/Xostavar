@@ -166,6 +166,38 @@ describe('sales (TZ 8, 9.6, 20)', () => {
       await closeAdmin();
       await s.admin.put('/settings', d);
     });
+    it("kassir narxni o'zgartiradi (unitPrice / lineTotal): faqat shu chekda, katalog narxi o'zgarmaydi; pasaytirish chegirma limitiga kiradi", async () => {
+      const mp = await makeProduct(c, s, { stock: 20, price: 37000 });
+      // dona narxi 37 000 → 36 500
+      const q1 = await c.post('/sales/quote', { lines: [{ productId: mp.id, unit: 'piece', qty: 2, unitPrice: 36500 }] }, { idem: false });
+      expect(q1.body.lines[0]).toMatchObject({ unitPrice: 36500, lineTotal: 73000 });
+      expect(q1.body).toMatchObject({ subtotal: 73000, totalAmount: 73000 });
+      // qator summasi to'g'ridan: 3 dona = 100 000
+      const r = await c.post('/sales', { lines: [{ productId: mp.id, unit: 'piece', qty: 3, lineTotal: 100000 }], payments: cash(100000) });
+      expect(r.status).toBe(201);
+      expect(r.body).toMatchObject({ totalAmount: 100000 });
+      expect(r.body.lines[0]).toMatchObject({ qty: 3, lineTotal: 100000, unitPrice: 33333 });
+      expect((await c.get(`/products/${mp.id}`)).body.retailPrice).toBe(37000);
+      const audit = (await c.get('/audit-logs?module=Kassa&pageSize=5')).body.items ?? [];
+      expect(JSON.stringify(audit)).toContain("narx o'zgartirildi");
+      // narxsiz mahsulot ham narx yozilsa sotiladi
+      const free = await makeProduct(c, s, { stock: 5, price: 0 });
+      expect(code(await c.post('/sales/quote', { lines: [{ productId: free.id, unit: 'piece', qty: 1 }] }, { idem: false }))).toBe('price_missing');
+      expect((await c.post('/sales/quote', { lines: [{ productId: free.id, unit: 'piece', qty: 1, unitPrice: 5000 }] }, { idem: false })).body.totalAmount).toBe(5000);
+      // 0 yoki manfiy narx → 400
+      expect((await c.post('/sales/quote', { lines: [{ productId: mp.id, unit: 'piece', qty: 1, unitPrice: 0 }] }, { idem: false })).status).toBe(400);
+      // kassir limiti: narxni pasaytirish ham chegirma
+      const d = (await s.admin.get('/settings')).body;
+      await s.admin.put('/settings', { ...d, rules: { ...d.rules, cashierMaxDiscount: 1000 } });
+      const kassir = await as(app, 'kassir');
+      const km = await makeProduct(s.admin, s, { stock: 10, price: 10000 });
+      const closeMain = await ensureShift(kassir);
+      expect(code(await kassir.post('/sales', { lines: [{ productId: km.id, unit: 'piece', qty: 1, unitPrice: 8000 }], payments: cash(8000) }))).toBe('discount_too_large');
+      expect((await kassir.post('/sales', { lines: [{ productId: km.id, unit: 'piece', qty: 1, unitPrice: 9500 }], payments: cash(9500) })).status).toBe(201);
+      expect((await kassir.post('/sales', { lines: [{ productId: km.id, unit: 'piece', qty: 1, unitPrice: 12000 }], payments: cash(12000) })).status).toBe(201);
+      await closeMain();
+      await s.admin.put('/settings', d);
+    });
     it('idempotentlik: bir xil kalit → bir xil chek, qoldiq bir marta; clientId takrori → avvalgi chek', async () => {
       const before = (await c.get(`/products/${cement.id}`)).body.stock;
       const key = uniq('k');

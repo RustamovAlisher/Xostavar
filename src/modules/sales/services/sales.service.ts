@@ -20,6 +20,13 @@ import { SalesRepository } from '../repositories/sales.repository.js';
 
 export type { QuotedLine, SaleView } from '../mappers/sales.mapper.js';
 
+/** Audit uchun: kassir narxini o'zgartirgan qatorlar («narx o'zgartirildi: Armatura 37 000 → 36 500»). */
+function priceNote(lines: QuotedLine[]): string {
+  const ch = lines.filter((l) => l.lineTotal !== l.listTotal);
+  if (!ch.length) return '';
+  return `; narx o'zgartirildi: ${ch.slice(0, 5).map((l) => `${l.name}${l.variantName ? ` (${l.variantName})` : ''} ${l.listUnitPrice.toLocaleString('ru-RU')} → ${l.unitPrice.toLocaleString('ru-RU')}`).join(', ')}${ch.length > 5 ? ` va yana ${ch.length - 5} ta` : ''}`;
+}
+
 /**
  * Kassa (TZ 8, 20). Savat summasi, qoldiq, tannarx, foyda va qarz — faqat serverda, bitta tranzaksiyada.
  * Ilova A algoritmi: qulf (tartiblangan), hisob, to'lov, yozish, qoldiq, nasiya, audit.
@@ -64,10 +71,21 @@ export class SalesService {
       const bp = prices.find((p) => p.productId === l.productId && (p.variantId ?? null) === (l.variantId ?? null));
       const target = bp ? { ...t.target, retailPrice: bp.retailPrice } : t.target;
       if (factorOf(target, l.unit) == null || !unitById.has(l.unit)) throw unprocessable('unit_not_allowed', `"${l.unit}" birligi "${t.product.name}" uchun belgilanmagan`);
-      if (priceOf(target, l.unit) <= 0) throw unprocessable('price_missing', `"${t.product.name}" uchun ${l.unit} narxi belgilanmagan`);
+      const overridden = l.lineTotal != null || l.unitPrice != null;
+      if (priceOf(target, l.unit) <= 0 && !overridden) throw unprocessable('price_missing', `"${t.product.name}" uchun ${l.unit} narxi belgilanmagan`);
       const calc = calcLine(target, l.unit, l.qty, l.cuts, { cutDeductionMode: rules.cutDeductionMode, pieceLengthMeters: Number(rules.pieceLengthMeters) }, unitById.get(l.unit)!.precision);
+      const listUnitPrice = calc.unitPrice;
+      const listTotal = calc.lineTotal;
+      // Kassir narxni (yoki qator summasini) o'zgartirgan: faqat shu chek uchun, katalog narxi o'zgarmaydi
+      if (l.lineTotal != null) {
+        calc.lineTotal = l.lineTotal;
+        calc.unitPrice = calc.qty > 0 ? Math.round(l.lineTotal / calc.qty) : listUnitPrice;
+      } else if (l.unitPrice != null) {
+        calc.unitPrice = l.unitPrice;
+        calc.lineTotal = Math.round(l.unitPrice * calc.qty);
+      }
       if (calc.qty <= 0 || calc.lineTotal <= 0) throw unprocessable('validation_failed', `"${t.product.name}": miqdor yoki summa 0`);
-      return { ...calc, productId: l.productId, variantId: l.variantId ?? null, name: t.product.name, variantName: t.variant?.name ?? null, sku: t.variant?.sku ?? t.product.sku, categoryId: t.product.categoryId, available: lvl.stock, costPerBase: lvl.costPrice };
+      return { ...calc, listUnitPrice, listTotal, productId: l.productId, variantId: l.variantId ?? null, name: t.product.name, variantName: t.variant?.name ?? null, sku: t.variant?.sku ?? t.product.sku, categoryId: t.product.categoryId, available: lvl.stock, costPerBase: lvl.costPrice };
     });
 
     const subtotal = lines.reduce((a, l) => a + l.lineTotal, 0);
@@ -134,7 +152,9 @@ export class SalesService {
       const shiftId = await this.shifts.requireForSale(tx, user, branchId);
       const q = await this.quoteLines(tx, branchId, dto, true);
       const rules = q.rules;
-      if (rules.cashierMaxDiscount > 0 && q.discount > rules.cashierMaxDiscount && !user.permissions.includes('manage_users')) {
+      // Narxni pasaytirish ham chegirma hisoblanadi (kassir chegirma limiti)
+      const priceCut = q.lines.reduce((a, l) => a + Math.max(0, l.listTotal - l.lineTotal), 0);
+      if (rules.cashierMaxDiscount > 0 && q.discount + priceCut > rules.cashierMaxDiscount && !user.permissions.includes('manage_users')) {
         throw unprocessable('discount_too_large', `Kassir uchun chegirma ko'pi bilan ${rules.cashierMaxDiscount.toLocaleString('ru-RU')} so'm`);
       }
 
@@ -193,7 +213,7 @@ export class SalesService {
       }
       await this.audit.log(user, {
         action: 'sale', module: 'Kassa', targetId: saleId, targetName: `Chek ${number} · ${customer?.name ?? 'Oddiy mijoz'}`, branchId, requestId,
-        details: remaining > 0 ? `Nasiya: jami ${q.total.toLocaleString('ru-RU')} so'm (${paid.toLocaleString('ru-RU')} to'landi + ${remaining.toLocaleString('ru-RU')} qarz)` : `Sotuv: ${q.total.toLocaleString('ru-RU')} so'm${q.discount ? `, chegirma ${q.discount.toLocaleString('ru-RU')}` : ''}${pays.length > 1 ? " (aralash to'lov)" : ''}`,
+        details: remaining > 0 ? `Nasiya: jami ${q.total.toLocaleString('ru-RU')} so'm (${paid.toLocaleString('ru-RU')} to'landi + ${remaining.toLocaleString('ru-RU')} qarz)` : `Sotuv: ${q.total.toLocaleString('ru-RU')} so'm${q.discount ? `, chegirma ${q.discount.toLocaleString('ru-RU')}` : ''}${pays.length > 1 ? " (aralash to'lov)" : ''}${priceNote(q.lines)}`,
       }, tx);
       await this.notify.enqueue(tx, 'sale', saleId, branchId);
       return saleId;
