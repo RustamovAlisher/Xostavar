@@ -277,6 +277,47 @@ describe('sales (TZ 8, 9.6, 20)', () => {
       expect(log.details).toMatch(/30\s000 so'm qarz qaytarildi/);
       expect(log.details).toMatch(/100\s000 so'mni avval to'lagan/);
     });
+    it("nasiya chekdan mahsulot olib tashlash: qoldiq qaytadi, chek va qarz kamayadi; bitta qator qolsa / qarzdan katta bo'lsa rad; huquq", async () => {
+      const cu = (await c.post('/customers', { name: 'Qator Mijoz', phone: phone(), creditLimit: 1_000_000 }, { idem: false })).body;
+      const armStock = (await c.get(`/products/${arm.id}`)).body.stock;
+      const sale = await c.post('/sales', {
+        lines: [{ productId: cement.id, unit: 'bag', qty: 2 }, { productId: arm.id, variantId: arm.variants[0].id, unit: 'piece', qty: 1 }],
+        customerId: cu.id, onCredit: true, payments: cash(30000),
+      });
+      expect(sale.status).toBe(201);
+      expect(sale.body).toMatchObject({ totalAmount: 276250, remainingDebt: 246250 });
+      const armLine = sale.body.lines.find((l: { productId: string }) => l.productId === arm.id);
+      const cementLine = sale.body.lines.find((l: { productId: string }) => l.productId === cement.id);
+      const kassir = await as(app, 'kassir');
+      expect((await kassir.at(branch).post(`/sales/${sale.body.id}/lines/${armLine.id}/remove`, {})).status).toBe(403);
+      const r = await c.post(`/sales/${sale.body.id}/lines/${armLine.id}/remove`, { reason: 'mijoz qaytardi' });
+      expect(r.status).toBe(201);
+      expect(r.body).toMatchObject({ totalAmount: 130000, subtotal: 130000, remainingDebt: 100000, paidAmount: 30000 });
+      expect(r.body.lines).toHaveLength(1);
+      expect((await c.get(`/customers/${cu.id}`)).body.totalDebtUZS).toBe(100000);
+      expect((await c.get(`/products/${arm.id}`)).body.stock).toBe(armStock);
+      const prof = (await c.get(`/customers/${cu.id}/profile`)).body;
+      expect(prof.sales[0].debt).toMatchObject({ original: 100000, outstanding: 100000, voided: 146250 });
+      expect(prof.sales[0].lines[0].id).toBe(cementLine.id);
+      // oxirgi qatorni olib tashlab bo'lmaydi — butun chek bekor qilinadi
+      expect(code(await c.post(`/sales/${sale.body.id}/lines/${cementLine.id}/remove`, {}))).toBe('validation_failed');
+      const log = (await c.get('/audit-logs?module=Kassa&pageSize=1')).body.items[0];
+      expect(log.details).toMatch(/Mahsulot olib tashlandi/);
+      expect(log.details).toMatch(/146\s250 so'm/);
+    });
+    it("nasiya chekdan mahsulot: mijoz chek uchun to'lagan bo'lsa va summa qolgan qarzdan katta — rad; qarzsiz chek — rad", async () => {
+      const cu = (await c.post('/customers', { name: 'Qator Mijoz 2', phone: phone(), creditLimit: 1_000_000 }, { idem: false })).body;
+      const sale = await c.post('/sales', {
+        lines: [{ productId: cement.id, unit: 'bag', qty: 2 }, { productId: arm.id, variantId: arm.variants[0].id, unit: 'piece', qty: 1 }],
+        customerId: cu.id, onCredit: true,
+      });
+      await c.post(`/customers/${cu.id}/payments`, { amount: 200000, methodId: s.methods.cash });
+      const armLine = sale.body.lines.find((l: { productId: string }) => l.productId === arm.id);
+      const r = await c.post(`/sales/${sale.body.id}/lines/${armLine.id}/remove`, {});
+      expect(code(r)).toBe('validation_failed'); // 146 250 > qolgan qarz 76 250
+      const cashSale = await c.post('/sales', { lines: [{ productId: cement.id, unit: 'bag', qty: 1 }, { productId: arm.id, variantId: arm.variants[0].id, unit: 'piece', qty: 1 }], payments: cash(211250) });
+      expect(code(await c.post(`/sales/${cashSale.body.id}/lines/${cashSale.body.lines[0].id}/remove`, {}))).toBe('validation_failed');
+    });
   });
 
   describe('ro\'yxat', () => {

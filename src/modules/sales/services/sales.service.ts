@@ -371,6 +371,54 @@ export class SalesService {
     return this.get(user, id);
   }
 
+  /**
+   * Nasiya chekdan bitta mahsulotni olib tashlash (qisman qaytarish): ombor qoldig'i qaytadi, chek summasi (chegirma ulushi bilan)
+   * va mijoz qarzi shuncha kamayadi. Mijoz bu chek uchun allaqachon to'lagan pulga tegilmaydi: mahsulot summasi chekning
+   * qolgan qarzidan oshmasa ruxsat; aks holda butun chek bekor qilinadi (naqd qaytarish bilan). Qator o'chadi, izi auditda qoladi.
+   */
+  async removeLine(user: AuthUser, branchId: string, id: string, lineId: string, reason: string, requestId?: string) {
+    await runTx(this.db, async (tx) => {
+      await this.repo.lockBranch(tx, branchId);
+      const s = await this.repo.lockById(tx, id);
+      if (!s) throw notFound('Chek');
+      if (s.branchId !== branchId) throw forbidden("Boshqa filial chekini o'zgartira olmaysiz", 'branch_forbidden');
+      if (s.type !== 'sale') throw unprocessable('validation_failed', 'Faqat sotuv chekidan mahsulot olib tashlanadi');
+      if (s.status === 'voided') throw conflict('already_voided', 'Bu chek bekor qilingan');
+      if (!s.customerId || s.remainingDebt <= 0) throw unprocessable('validation_failed', "Faqat nasiyali (qarzi bor) chekdan mahsulot olib tashlanadi — boshqa chekni bekor qiling");
+      const lines = await this.repo.lines(tx, id);
+      const line = lines.find((l) => l.id === lineId);
+      if (!line) throw notFound('Chek qatori');
+      if (lines.length < 2) throw unprocessable('validation_failed', "Chekda bitta mahsulot qolgan — butun chekni bekor qiling");
+
+      // Mahsulot summasi chegirma ulushini ayirib: Σ to'langan + qarz = jami tengligi saqlanadi
+      const lineTotal = Number(line.lineTotal);
+      const share = s.subtotal > 0 ? Math.round((s.discountAmount * lineTotal) / s.subtotal) : 0;
+      const value = lineTotal - share;
+      const cost = Math.round(Number(line.costPerBase ?? 0) * Number(line.baseQty));
+
+      // Qulf tartibi void bilan bir xil: filial → chek → qoldiq → mijoz
+      const levels = await this.inventory.lockLevels(tx, branchId, [{ productId: line.productId, variantId: line.variantId }], true);
+      const { left, number } = await this.customers.saleDebtLeft(tx, s.customerId, id);
+      if (value > left) {
+        throw unprocessable('validation_failed', `Mahsulot summasi (${value.toLocaleString('ru-RU')} so'm) chekning qolgan qarzidan (${left.toLocaleString('ru-RU')} so'm) katta — mijoz to'lagan pulni qaytarish uchun butun chekni bekor qiling`);
+      }
+      const key = `${line.productId}|${line.variantId ?? ''}`;
+      await this.inventory.applyMovement(tx, levels.get(key)!, { branchId, productId: line.productId, variantId: line.variantId, type: 'sale_void', qtyBase: qty4(Number(line.baseQty)), unit: line.unit, qtyUnit: qty4(Number(line.qty)), refType: 'sale', refId: id, userId: user.id });
+      const r = await this.customers.applyDebt(tx, { customerId: s.customerId, branchId, type: 'sale_void', amount: -value, refType: 'sale', refId: id, userId: user.id });
+      await this.repo.deleteLine(tx, lineId);
+      await this.repo.updateSale(tx, id, {
+        subtotal: s.subtotal - lineTotal, discountAmount: s.discountAmount - share, totalAmount: s.totalAmount - value,
+        remainingDebt: s.remainingDebt - value, profit: s.profit - (value - cost), customerDebtAfter: r.after,
+      });
+      await this.shifts.refreezeIfClosed(tx, s.shiftId);
+      await this.audit.log(user, {
+        action: 'edit', module: 'Kassa', targetId: id, targetName: `Chek ${number} · ${s.customerName}`, branchId, requestId,
+        details: `Mahsulot olib tashlandi: ${line.name}${line.variantName ? ` (${line.variantName})` : ''} ${Number(line.qty)} ${line.unit}, ${value.toLocaleString('ru-RU')} so'm; mijoz qarzi ${(-r.applied).toLocaleString('ru-RU')} so'mga kamaydi${reason ? `. Sabab: ${reason}` : ''}`,
+      }, tx);
+    });
+    return this.get(user, id);
+  }
+
   /* ───────── O'qish ───────── */
 
   async get(user: AuthUser, id: string, strict = false) {

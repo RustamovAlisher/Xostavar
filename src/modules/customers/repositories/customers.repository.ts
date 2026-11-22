@@ -140,7 +140,7 @@ export class CustomersRepository {
   saleLinesFor(saleIds: string[], tx: DbOrTx = this.db) {
     if (!saleIds.length) return Promise.resolve([]);
     return tx.select({
-      saleId: saleLines.saleId, name: saleLines.name, variantName: saleLines.variantName, sku: saleLines.sku, unit: saleLines.unit,
+      saleId: saleLines.saleId, id: saleLines.id, name: saleLines.name, variantName: saleLines.variantName, sku: saleLines.sku, unit: saleLines.unit,
       qty: saleLines.qty, unitPrice: saleLines.unitPrice, lineTotal: saleLines.lineTotal,
     }).from(saleLines).where(inArray(saleLines.saleId, saleIds)).orderBy(asc(saleLines.sortOrder));
   }

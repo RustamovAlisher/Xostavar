@@ -96,6 +96,10 @@ export class SalesRepository {
     return tx.select().from(sales).where(eq(sales.id, id)).limit(1).for('update').then((r) => r[0] ?? null);
   }
 
+  deleteLine(tx: DbOrTx, lineId: string) {
+    return tx.delete(saleLines).where(eq(saleLines.id, lineId));
+  }
+
   lines(tx: DbOrTx, saleId: string) {
     return tx.select().from(saleLines).where(eq(saleLines.saleId, saleId));
   }

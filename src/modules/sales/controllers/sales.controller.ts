@@ -2,7 +2,7 @@ import { Body, Controller, Get, HttpCode, Param, ParseUUIDPipe, Post, Query } fr
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { BranchId, BranchScoped, CurrentUser, Perms, Req, requestIdOf, type AuthRequest, type AuthUser } from '../../../common/decorators/auth-context.js';
 import { Idempotent } from '../../../common/interceptors/idempotency.interceptor.js';
-import { OwnUseDto, OwnUseListQuery, SaleDto, SalesListQuery, VoidSaleDto } from '../dto/sales.dto.js';
+import { OwnUseDto, OwnUseListQuery, RemoveSaleLineDto, SaleDto, SalesListQuery, VoidSaleDto } from '../dto/sales.dto.js';
 import { SalesService } from '../services/sales.service.js';
 
 @ApiTags('sales')
@@ -68,5 +68,13 @@ export class SalesController {
   @Idempotent()
   void(@CurrentUser() u: AuthUser, @BranchId() branchId: string, @Req() req: AuthRequest, @Param('id', ParseUUIDPipe) id: string, @Body() dto: VoidSaleDto) {
     return this.sales.void(u, branchId, id, dto.reason, requestIdOf(req));
+  }
+
+  /** Nasiya chekdan bitta mahsulotni olib tashlash: qoldiq qaytadi, chek summasi va mijoz qarzi shuncha kamayadi. */
+  @Post(':id/lines/:lineId/remove')
+  @Perms('void_sale')
+  @Idempotent()
+  removeLine(@CurrentUser() u: AuthUser, @BranchId() branchId: string, @Req() req: AuthRequest, @Param('id', ParseUUIDPipe) id: string, @Param('lineId', ParseUUIDPipe) lineId: string, @Body() dto: RemoveSaleLineDto) {
+    return this.sales.removeLine(u, branchId, id, lineId, dto.reason?.trim() || '', requestIdOf(req));
   }
 }

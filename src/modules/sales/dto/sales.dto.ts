@@ -44,6 +44,11 @@ export class VoidSaleDto {
   @IsString() @MinLength(1) @MaxLength(300) reason: string;
 }
 
+/** Nasiya chekdan bitta mahsulotni olib tashlash (qaytarish): sabab ixtiyoriy. */
+export class RemoveSaleLineDto {
+  @IsOptional() @IsString() @MaxLength(300) reason?: string;
+}
+
 export class SalesListQuery extends PageQuery {
   @IsOptional() @IsString() from?: string;
   @IsOptional() @IsString() to?: string;
