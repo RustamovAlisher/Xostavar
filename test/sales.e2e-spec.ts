@@ -320,6 +320,30 @@ describe('sales (TZ 8, 9.6, 20)', () => {
     });
   });
 
+  describe('kategoriya mashhurligi', () => {
+    it("category-rank: sotuvlar bo'yicha kategoriyalar, eng ko'p sotilgani birinchi; bekor qilingan hisobga olinmaydi; summa ochilmaydi", async () => {
+      const br = (await s.admin.post('/branches', { name: uniq('Rank ') }, { idem: false })).body.id;
+      const b = s.admin.at(br);
+      const a1 = await makeProduct(b, s, { stock: 50, price: 10000, category: 'Armatura' });
+      const a2 = await makeProduct(b, s, { stock: 50, price: 10000, category: 'Sement va aralashmalar' });
+      const closeB = await ensureShift(b);
+      const sell = (id: string) => b.post('/sales', { lines: [{ productId: id, unit: 'piece', qty: 1 }], payments: cash(10000) });
+      expect((await b.get('/sales/category-rank')).body.items).toEqual([]);
+      await sell(a1.id);
+      await sell(a2.id); await sell(a2.id);
+      const voided = await sell(a1.id); await sell(a1.id);
+      const pairs = (r: { items: { categoryId: string; lines: number }[] }) => r.items.map((i) => [i.categoryId, i.lines]);
+      let r = (await b.get('/sales/category-rank')).body;
+      expect(pairs(r)).toEqual([[s.cats['Armatura'], 3], [s.cats['Sement va aralashmalar'], 2]]);
+      await b.post(`/sales/${voided.body.id}/void`, { reason: 'x' });
+      await sell(a2.id);
+      r = (await b.get('/sales/category-rank')).body;
+      expect(pairs(r)).toEqual([[s.cats['Sement va aralashmalar'], 3], [s.cats['Armatura'], 2]]);
+      expect(r.items[0].amount).toBeUndefined();
+      await closeB();
+    });
+  });
+
   describe('ro\'yxat', () => {
     it("jamilar (summary): butun davr bo'yicha, to'lov turlari kesimi; method filtri (cash / card / debt)", async () => {
       const br = (await s.admin.post('/branches', { name: uniq('Hisobot ') }, { idem: false })).body.id;

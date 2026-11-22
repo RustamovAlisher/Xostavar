@@ -419,6 +419,12 @@ export class SalesService {
     return this.get(user, id);
   }
 
+  /** Kassa kategoriyalarini «eng ko'p sotiladigan birinchi» tartiblash uchun: oxirgi 90 kun, sotuv qatorlari soni (summa ochilmaydi). */
+  async categoryRank(branchId: string) {
+    const rows = await this.repo.categoryRank(branchId, 90);
+    return { days: 90, items: rows.map((r) => ({ categoryId: r.categoryId as string, lines: r.lines })) };
+  }
+
   /* ───────── O'qish ───────── */
 
   async get(user: AuthUser, id: string, strict = false) {

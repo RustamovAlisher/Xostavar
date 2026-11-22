@@ -96,6 +96,18 @@ export class SalesRepository {
     return tx.select().from(sales).where(eq(sales.id, id)).limit(1).for('update').then((r) => r[0] ?? null);
   }
 
+  /** Kategoriyalar mashhurligi: oxirgi `days` kunda shu filialda nechta sotuv qatori (bekor qilinmagan sotuv chekidan). */
+  categoryRank(branchId: string, days: number) {
+    const lines = sql<number>`count(*)::int`;
+    return this.db
+      .select({ categoryId: saleLines.categoryId, lines })
+      .from(saleLines)
+      .innerJoin(sales, eq(sales.id, saleLines.saleId))
+      .where(and(eq(sales.branchId, branchId), eq(sales.type, 'sale'), eq(sales.status, 'completed'), gte(sales.createdAt, sql`now() - make_interval(days => ${days})`), sql`${saleLines.categoryId} is not null`))
+      .groupBy(saleLines.categoryId)
+      .orderBy(desc(lines));
+  }
+
   deleteLine(tx: DbOrTx, lineId: string) {
     return tx.delete(saleLines).where(eq(saleLines.id, lineId));
   }

@@ -56,6 +56,13 @@ export class SalesController {
     return this.sales.ownUseList(u, branchId, q);
   }
 
+  /** Kategoriyalar mashhurligi (kassa chiplari tartibi). `:id` dan oldin turishi shart. */
+  @Get('category-rank')
+  @Perms('view_pos')
+  categoryRank(@BranchId() branchId: string) {
+    return this.sales.categoryRank(branchId);
+  }
+
   @Get(':id')
   @Perms('view_pos', 'view_analytics')
   get(@CurrentUser() u: AuthUser, @Param('id', ParseUUIDPipe) id: string) {
