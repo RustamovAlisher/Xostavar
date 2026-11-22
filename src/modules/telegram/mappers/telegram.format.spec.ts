@@ -18,23 +18,63 @@ describe('formatlash', () => {
     expect(esc('Bolt <M8> & gayka')).toBe('Bolt &lt;M8&gt; &amp; gayka');
   });
 
-  it("sotuv xabari: qatorlar va jami; nasiya bo'lsa sarlavha va qarz", () => {
-    const base = {
-      number: 'MAIN-20261106-0012', branchName: 'Asosiy', cashierName: 'Aziz', customerName: '', createdAt: tk('2026-11-06 14:32'),
-      lines: [{ name: 'Disk <230>', variantName: '230 mm', qty: 3, unit: 'dona', unitPrice: 28_600, lineTotal: 85_800 }],
-      subtotal: 85_800, discount: 0, total: 85_800, remainingDebt: 0, usdRate: 12_000,
-      payments: [{ kind: 'cash', label: 'Naqd pul', amount: 85_800, amountUsd: 7.15 }],
-    };
-    const m = saleMessage(base);
-    expect(m).toContain('🧾 <b>Sotuv</b> · 14:32');
-    expect(m).toContain('• Disk &lt;230&gt; (230 mm) — 3 dona × 28 600 = <b>85 800</b>');
-    expect(m).toContain("Jami: 85 800 so'm</b>  (≈ $7.15)");
-    expect(m).toContain('<i>MAIN-20261106-0012 · Asosiy · Aziz</i>');
-    expect(m).not.toContain('Naqd pul');
-    const credit = saleMessage({ ...base, customerName: 'Vali', remainingDebt: 50_000, customerDebtAfter: 150_000, payments: [], discount: 1_000 });
-    expect(credit).toContain('📒 <b>Nasiyaga sotuv</b>');
-    expect(credit).toContain('Chegirma: −1 000');
-    expect(credit).toContain('Qarzga: <b>50 000</b> · Vali (jami qarzi 150 000)');
+  const saleBase = {
+    number: 'MAIN-20261106-0012', branchName: 'Asosiy', cashierName: 'Aziz', customerName: '', createdAt: tk('2026-11-06 14:32'),
+    lines: [{ name: 'Disk <230>', variantName: '230 mm', qty: 3, unit: 'dona', unitPrice: 28_600, lineTotal: 85_800 }],
+    subtotal: 85_800, discount: 0, total: 85_800, remainingDebt: 0, usdRate: 12_000,
+    payments: [{ kind: 'cash', label: 'Naqd pul', amount: 85_800, amountUsd: null }],
+  };
+
+  it('sotuv xabari: kim, qachon, nima, qancha, qanday to\'langan — oddiy so\'zlar bilan', () => {
+    const m = saleMessage(saleBase);
+    expect(m).toContain('🧾 <b>SOTUV</b>');
+    expect(m).toContain('🕐 06.11.2026 14:32 · Kassir: <b>Aziz</b>');
+    expect(m).toContain('👤 Mijoz: <b>Oddiy mijoz</b>');
+    expect(m).toContain('<b>1.</b> Disk &lt;230&gt; — 230 mm');
+    expect(m).toContain("3 dona × 28 600 = <b>85 800 so'm</b>");
+    expect(m).toContain("💰 <b>JAMI: 85 800 so'm</b>  (≈ $7.15)");
+    expect(m).toContain("<b>To'lov:</b>\n💵 Naqd pul: 85 800 so'm");
+    expect(m).toContain('<i>Chek № MAIN-20261106-0012 · Asosiy</i>');
+    expect(m).not.toContain('Nasiya');
+    expect(m).not.toContain('Chegirma');
+  });
+
+  it('nasiya: sarlavha, qarz va mijozning umumiy qarzi; chegirma va aralash to\'lov alohida qatorlarda', () => {
+    const credit = saleMessage({
+      ...saleBase, customerName: 'Vali', remainingDebt: 50_000, customerDebtAfter: 150_000, discount: 1_000, subtotal: 86_800,
+      payments: [{ kind: 'cash', label: 'Naqd pul', amount: 20_000 }, { kind: 'card', label: 'Plastik karta', amount: 15_800, amountUsd: 1.5 }],
+    });
+    expect(credit).toContain('📒 <b>NASIYAGA SOTUV</b>');
+    expect(credit).toContain('👤 Mijoz: <b>Vali</b>');
+    expect(credit).toContain("Mahsulotlar: 86 800 so'm");
+    expect(credit).toContain("🏷 Chegirma: −1 000 so'm");
+    expect(credit).toContain("💵 Naqd pul: 20 000 so'm");
+    expect(credit).toContain("💳 Plastik karta: 15 800 so'm ($1.50)");
+    expect(credit).toContain("📒 Nasiyaga (qarzga): <b>50 000 so'm</b>");
+    expect(credit).toContain("⚠️ Mijozning umumiy qarzi: <b>150 000 so'm</b>");
+  });
+
+  it('kesib sotilgan mahsulot: kesim tafsiloti va sof uzunlik xabarda ko\'rinadi', () => {
+    const m = saleMessage({
+      ...saleBase,
+      lines: [
+        { name: 'Truba kvadrat', variantName: '40×40×2 mm', qty: 15, unit: 'm', unitPrice: 9_000, lineTotal: 135_000, cuts: [{ lengthMeters: 6, quantity: 2 }, { lengthMeters: 3, quantity: 1 }] },
+        { name: 'Sement', qty: 2, unit: 'qop', unitPrice: 65_000, lineTotal: 130_000, cuts: [] },
+      ],
+      subtotal: 265_000, total: 265_000, payments: [{ kind: 'cash', label: 'Naqd pul', amount: 265_000 }],
+    });
+    expect(m).toContain('<b>1.</b> Truba kvadrat — 40×40×2 mm');
+    expect(m).toContain('✂️ Kesib berildi: 6 m × 2 ta, 3 m × 1 ta (jami 15 m)');
+    expect(m).toContain('<b>2.</b> Sement');
+    expect(m.match(/✂️/g)).toHaveLength(1); // kesimsiz mahsulotda yo'q
+  });
+
+  it('juda ko\'p mahsulot: Telegram 4096 chegarasidan oshmaydi, oxirida «yana N ta»', () => {
+    const lines = Array.from({ length: 80 }, (_, i) => ({ name: `Mahsulot raqami ${i + 1} (uzun nomli tovar)`, variantName: 'katta o\'lcham', qty: 1, unit: 'dona', unitPrice: 10_000, lineTotal: 10_000, cuts: [{ lengthMeters: 1.5, quantity: 2 }] }));
+    const m = saleMessage({ ...saleBase, lines, subtotal: 800_000, total: 800_000, payments: [{ kind: 'cash', label: 'Naqd pul', amount: 800_000 }] });
+    expect(m.length).toBeLessThan(4096);
+    expect(m).toMatch(/va yana \d+ ta mahsulot/);
+    expect(m).toContain("JAMI: 800 000 so'm"); // jami/to'lov qismi hech qachon kesilmaydi
   });
 
   it('kun yakuni: foyda faqat ruxsat bo\'lsa; bo\'sh kun', () => {

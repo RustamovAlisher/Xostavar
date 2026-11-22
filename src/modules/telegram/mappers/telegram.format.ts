@@ -23,6 +23,9 @@ export function qtyStr(q: number): string {
 
 const tkFmt = new Intl.DateTimeFormat('ru-RU', { timeZone: 'Asia/Tashkent', hour: '2-digit', minute: '2-digit', hour12: false });
 export const timeTk = (d: Date) => tkFmt.format(d);
+const dtFmt = new Intl.DateTimeFormat('ru-RU', { timeZone: 'Asia/Tashkent', day: '2-digit', month: '2-digit', year: 'numeric', hour: '2-digit', minute: '2-digit', hour12: false });
+/** "22.11.2026 10:15" (Toshkent vaqti) */
+export const dateTimeTk = (d: Date) => dtFmt.format(d).replace(',', '');
 /** "2026-11-06" → "06.11.2026" */
 export const dayDots = (day: string) => day.split('-').reverse().join('.');
 
@@ -30,7 +33,8 @@ const KIND_ICON: Record<string, string> = { cash: '💵', card: '💳', transfer
 export const kindIcon = (kind: string) => KIND_ICON[kind] ?? '💠';
 
 export interface PayView { kind: string; label: string; amount: number; amountUsd?: number | null }
-export interface LineView { name: string; variantName?: string | null; qty: number; unit: string; unitPrice: number; lineTotal: number }
+export interface CutView { lengthMeters: number; quantity: number }
+export interface LineView { name: string; variantName?: string | null; qty: number; unit: string; unitPrice: number; lineTotal: number; cuts?: CutView[] | null }
 
 export interface SaleMsgInput {
   number: string;
@@ -48,32 +52,71 @@ export interface SaleMsgInput {
   payments: PayView[];
 }
 
-/** Xabarda ko'rsatiladigan qatorlar chegarasi (Telegram 4096 belgi). */
-const MAX_LINES = 25;
+/** Telegram xabari 4096 belgidan oshmasin: mahsulot bloklari shu chegaraga sig'gancha ko'rsatiladi. */
+const MSG_LIMIT = 3900;
+const RULE = '──────────────';
 
-function linesBlock(lines: LineView[]): string {
-  const shown = lines.slice(0, MAX_LINES).map((l) => {
-    const name = esc(l.variantName ? `${l.name} (${l.variantName})` : l.name);
-    return `• ${name} — ${qtyStr(l.qty)} ${esc(l.unit)} × ${money(l.unitPrice)} = <b>${money(l.lineTotal)}</b>`;
-  });
-  if (lines.length > MAX_LINES) shown.push(`<i>… va yana ${lines.length - MAX_LINES} ta mahsulot</i>`);
-  return shown.join('\n');
+/** Bitta mahsulot bloki: raqam, nom, «miqdor × narx = summa» va (bo'lsa) kesish tafsiloti. Oddiy so'zlar bilan. */
+function lineBlock(l: LineView, i: number): string {
+  const name = esc(l.variantName ? `${l.name} — ${l.variantName}` : l.name);
+  const out = [
+    `<b>${i + 1}.</b> ${name}`,
+    `     ${qtyStr(l.qty)} ${esc(l.unit)} × ${money(l.unitPrice)} = <b>${money(l.lineTotal)} so'm</b>`,
+  ];
+  const cuts = (l.cuts ?? []).filter((c) => c.lengthMeters > 0 && c.quantity > 0);
+  if (cuts.length) {
+    const net = cuts.reduce((a, c) => a + c.lengthMeters * c.quantity, 0);
+    out.push(`     ✂️ Kesib berildi: ${cuts.map((c) => `${qtyStr(c.lengthMeters)} m × ${c.quantity} ta`).join(', ')} (jami ${qtyStr(Math.round(net * 100) / 100)} m)`);
+  }
+  return out.join('\n');
 }
 
-/** Sotuv xabari: nima, qancha va jami. Chek raqami, filial va kassir — pastda bitta kichik qatorda. */
+/** Mahsulot bloklari (har biri bo'sh qator bilan ajratilgan); `budget` belgidan oshsa oxirida «yana N ta». */
+function linesBlock(lines: LineView[], budget = MSG_LIMIT): string {
+  const blocks: string[] = [];
+  let used = 0;
+  for (let i = 0; i < lines.length; i++) {
+    const b = lineBlock(lines[i], i);
+    if (used + b.length + 2 > budget && blocks.length) {
+      blocks.push(`<i>… va yana ${lines.length - i} ta mahsulot (hammasi chekda)</i>`);
+      return blocks.join('\n\n');
+    }
+    blocks.push(b);
+    used += b.length + 2;
+  }
+  return blocks.join('\n\n');
+}
+
+/**
+ * Sotuv xabari — chekning o'zi kabi, oddiy so'zlar bilan: kim, qachon, kimga; har mahsulot (kesilgan bo'lsa tafsiloti bilan);
+ * jami; qanday to'langan (har usul alohida) va nasiya bo'lsa mijozning umumiy qarzi.
+ */
 export function saleMessage(s: SaleMsgInput): string {
   const credit = s.remainingDebt > 0;
-  const out = [
-    `${credit ? '📒 <b>Nasiyaga sotuv</b>' : '🧾 <b>Sotuv</b>'} · ${timeTk(s.createdAt)}`,
-    '',
-    linesBlock(s.lines),
-    '',
-  ];
-  if (s.discount > 0) out.push(`🏷 Chegirma: −${money(s.discount)}`);
-  out.push(`💰 <b>Jami: ${money(s.total)} so'm</b>${s.usdRate ? `  (≈ ${usd(s.total / s.usdRate)})` : ''}`);
-  if (credit) out.push(`📒 Qarzga: <b>${money(s.remainingDebt)}</b> · ${esc(s.customerName || 'Oddiy mijoz')}${s.customerDebtAfter != null ? ` (jami qarzi ${money(s.customerDebtAfter)})` : ''}`);
-  out.push('', `<i>${esc(s.number)} · ${esc(s.branchName)} · ${esc(s.cashierName)}</i>`);
-  return out.join('\n');
+  const head = [
+    credit ? '📒 <b>NASIYAGA SOTUV</b>' : '🧾 <b>SOTUV</b>',
+    `🕐 ${dateTimeTk(s.createdAt)} · Kassir: <b>${esc(s.cashierName)}</b>`,
+    `👤 Mijoz: <b>${esc(s.customerName?.trim() || 'Oddiy mijoz')}</b>`,
+    RULE,
+  ].join('\n');
+
+  const foot: string[] = [RULE];
+  if (s.discount > 0) {
+    foot.push(`Mahsulotlar: ${money(s.subtotal)} so'm`, `🏷 Chegirma: −${money(s.discount)} so'm`);
+  }
+  foot.push(`💰 <b>JAMI: ${money(s.total)} so'm</b>${s.usdRate ? `  (≈ ${usd(s.total / s.usdRate)})` : ''}`);
+  if (s.payments.length || credit) {
+    foot.push('', "<b>To'lov:</b>");
+    for (const p of s.payments) {
+      foot.push(`${kindIcon(p.kind)} ${esc(p.label)}: ${money(p.amount)} so'm${p.amountUsd ? ` (${usd(p.amountUsd)})` : ''}`);
+    }
+    if (credit) foot.push(`📒 Nasiyaga (qarzga): <b>${money(s.remainingDebt)} so'm</b>`);
+  }
+  if (credit && s.customerDebtAfter != null) foot.push(`⚠️ Mijozning umumiy qarzi: <b>${money(s.customerDebtAfter)} so'm</b>`);
+  foot.push('', `<i>Chek № ${esc(s.number)} · ${esc(s.branchName)}</i>`);
+
+  const footStr = foot.join('\n');
+  return `${head}\n${linesBlock(s.lines, MSG_LIMIT - head.length - footStr.length - 4)}\n${footStr}`;
 }
 
 export interface VoidMsgInput { number: string; branchName: string; cashierName: string; customerName: string; total: number; createdAt: Date; voidedAt: Date; voidedByName?: string | null; reason?: string | null; lines: LineView[] }
@@ -87,6 +130,7 @@ export function voidMessage(v: VoidMsgInput): string {
     `Sotgan: ${esc(v.cashierName)} (${timeTk(v.createdAt)}) · Mijoz: ${esc(v.customerName || 'Oddiy mijoz')}`,
     `Bekor qildi: <b>${esc(v.voidedByName ?? '—')}</b>`,
     `Sabab: <i>${esc(v.reason || '—')}</i>`,
+    ...(v.lines.length ? ['', RULE, linesBlock(v.lines, 2600)] : []),
   ].join('\n');
 }
 

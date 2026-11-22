@@ -32,7 +32,7 @@ export class SalesReportService {
     if (!row) return null;
     const { s, branchName } = row;
     const [lines, pays, unit] = await Promise.all([this.repo.saleLines(saleId), this.repo.salePayments([saleId]), this.unitShort()]);
-    const lineViews: LineView[] = lines.map((l) => ({ name: l.name, variantName: l.variantName, qty: Number(l.qty), unit: unit(l.unit), unitPrice: l.unitPrice, lineTotal: l.lineTotal }));
+    const lineViews: LineView[] = lines.map((l) => ({ name: l.name, variantName: l.variantName, qty: Number(l.qty), unit: unit(l.unit), unitPrice: l.unitPrice, lineTotal: l.lineTotal, cuts: l.cuts }));
     const payViews: PayView[] = pays.map((p) => ({ kind: p.kind, label: p.label ?? SALE_PAY_FALLBACK[p.kind] ?? p.methodCode, amount: p.amount, amountUsd: p.amountUsd }));
     const sale: SaleMsgInput = {
       number: s.number, branchName, cashierName: s.cashierName, customerName: s.customerName, createdAt: s.createdAt, lines: lineViews,

@@ -99,10 +99,10 @@ describe('telegram savdo boti', () => {
     const sale = await sell(2);
     await worker.processOnce();
     const msg = lastTo(GROUP);
-    expect(msg).toContain('🧾 <b>Sotuv</b>');
+    expect(msg).toContain('🧾 <b>SOTUV</b>');
     expect(msg).toContain(sale.number);
     expect(msg).toContain('&lt;M400&gt;');
-    expect(msg).toContain("Jami: 100 000 so'm");
+    expect(msg).toContain("JAMI: 100 000 so'm");
 
     // Bir xil hodisa ikki marta yuborilmaydi
     const n = countTo(GROUP);
