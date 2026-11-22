@@ -4,6 +4,7 @@ import { runTx } from '../../../db/tx.js';
 import type { AuthUser } from '../../../common/decorators/auth-context.js';
 import { conflict, forbidden, notFound, unprocessable } from '../../../common/errors/app-error.js';
 import { page } from '../../../common/utils/pagination.js';
+import { OWN_USE_CATEGORY } from '../../../common/constants/own-use.js';
 import { AuditService } from '../../audit/services/audit.service.js';
 import { ShiftsService } from '../../shifts/services/shifts.service.js';
 import type { ExpenseDto, ExpenseListQuery, ExpensePatchDto } from '../dto/expenses.dto.js';
@@ -26,6 +27,7 @@ export class ExpensesService {
     const id = await runTx(this.db, async (tx) => {
       const cat = await this.repo.findCategory(dto.categoryId, tx);
       if (!cat || !cat.active) throw notFound('Xarajat kategoriyasi');
+      if (cat.name === OWN_USE_CATEGORY) throw unprocessable('validation_failed', "«O'zimga olingan» kategoriyasi faqat kassadagi «O'zimga» tugmasi bilan yoziladi (ombor qoldig'i ham chiqishi uchun)");
       const m = await this.repo.findPaymentMethod(tx, dto.methodId);
       if (!m || !m.enabled || m.kind === 'debt') throw unprocessable('payment_method_disabled', "To'lov usuli noto'g'ri yoki o'chirilgan");
       let shiftId: string | null = null;
@@ -55,9 +57,12 @@ export class ExpensesService {
     if (e.branchId !== branchId) throw forbidden('Boshqa filial xarajati', 'branch_forbidden');
     if (e.voidedAt) throw conflict('already_voided', "Bu xarajat o'chirilgan");
     if (e.createdBy !== user.id && !user.permissions.includes('manage_users')) throw forbidden("Boshqa xodim yozgan xarajatni faqat administrator o'zgartiradi");
+    const own = await this.repo.findCategory(e.categoryId);
+    if (own?.name === OWN_USE_CATEGORY) throw unprocessable('validation_failed', "«O'zimga olingan» yozuv tahrirlanmaydi — xato bo'lsa «Qaytarish» bilan bekor qilib, qaytadan kiriting");
     if (dto.categoryId) {
       const cat = await this.repo.findCategory(dto.categoryId);
       if (!cat || !cat.active) throw notFound('Xarajat kategoriyasi');
+      if (cat.name === OWN_USE_CATEGORY) throw unprocessable('validation_failed', "«O'zimga olingan» kategoriyasi faqat kassadagi «O'zimga» tugmasi bilan yoziladi");
     }
     // Tekshiruv bilan yozish orasida o'chirilgan bo'lsa — o'chirilgan yozuv tahrirlanmasin
     const row = await this.repo.updateIfActive(id, { date: dto.date ?? e.date, categoryId: dto.categoryId ?? e.categoryId, note: dto.note !== undefined ? dto.note.trim() || null : e.note });
@@ -72,6 +77,8 @@ export class ExpensesService {
     if (e.voidedAt) throw conflict('already_voided', "Bu xarajat allaqachon o'chirilgan");
     if (e.createdBy !== user.id && !user.permissions.includes('manage_users')) throw forbidden("Boshqa xodim yozgan xarajatni faqat administrator o'chiradi");
     const cat = await this.repo.findCategory(e.categoryId);
+    // O'zimga olinganda ombor qoldig'i ham chiqqan — oddiy o'chirish qoldiqni qaytarmaydi; maxsus «Qaytarish» ishlatiladi
+    if (cat?.name === OWN_USE_CATEGORY) throw unprocessable('validation_failed', "«O'zimga olingan» yozuvni «Qaytarish» tugmasi bilan bekor qiling — ombor qoldig'i ham qaytadi");
     return runTx(this.db, async (tx) => {
       const row = await this.repo.voidIfActive(tx, id, user.id);
       if (!row) throw conflict('already_voided', "Bu xarajat allaqachon o'chirilgan");

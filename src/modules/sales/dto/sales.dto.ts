@@ -56,3 +56,9 @@ export class SalesListQuery extends PageQuery {
   @ApiPropertyOptional({ description: "To'lov turi bo'yicha: usul kodi (cash, card, transfer, …) yoki 'debt' — nasiyali sotuvlar" })
   @IsOptional() @IsString() @MaxLength(40) method?: string;
 }
+
+/** POST /sales/own-use: kassadagi savat o'zimga olinadi (sotuv emas, pul olinmaydi). */
+export class OwnUseDto {
+  @IsArray() @ArrayMinSize(1) @ArrayMaxSize(200) @ValidateNested({ each: true }) @Type(() => SaleLineDto) lines: SaleLineDto[];
+  @ApiPropertyOptional({ description: "Izoh (ixtiyoriy): masalan «uy uchun»" }) @IsOptional() @IsString() @MaxLength(200) note?: string;
+}

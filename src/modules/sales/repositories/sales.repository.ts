@@ -1,7 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { and, desc, eq, exists, gt, gte, ilike, inArray, lte, or, sql, type SQL } from 'drizzle-orm';
 import { DB, type Db, type DbOrTx } from '../../../db/db.module.js';
-import { branches, paymentMethods, saleLines, salePayments, sales, units } from '../../../entities/index.js';
+import { branches, expenseCategories, expenses, paymentMethods, saleLines, salePayments, sales, stockMovements, units } from '../../../entities/index.js';
 import type { SalesListQuery } from '../dto/sales.dto.js';
 import { textQuery } from '../../../common/search-sql.js';
 
@@ -9,6 +9,7 @@ export type SaleRow = typeof sales.$inferSelect;
 export type SaleLineRow = typeof saleLines.$inferSelect;
 export type SalePaymentRow = typeof salePayments.$inferSelect;
 export type PaymentMethodRow = typeof paymentMethods.$inferSelect;
+export type ExpenseRow = typeof expenses.$inferSelect;
 export type StockKey = { productId: string; variantId: string | null };
 
 /**
@@ -194,5 +195,33 @@ export class SalesRepository {
       ...(q.method ? await this.debtTotals(branchId, cashierId, q, tx) : {}),
       methods: methods.map((m) => ({ code: m.code, kind: m.kind, type: m.type as 'sale' | 'debt_payment', amount: Number(m.amount), count: Number(m.count) })),
     };
+  }
+
+  /* ───────── «O'zimga olish» (kassadan mol egasi hisobiga): xarajat yozuvi va uning qoldiq harakatlari ───────── */
+
+  /** Kategoriya bo'lmasa yaratadi (nomi bo'yicha unikal indeks — parallel chaqiruvda ham bitta qator). */
+  async ensureCategory(tx: DbOrTx, name: string) {
+    await tx.insert(expenseCategories).values({ name, active: true, sortOrder: 99 }).onConflictDoNothing();
+    const [c] = await tx.select().from(expenseCategories).where(sql`lower(${expenseCategories.name}) = lower(${name})`).limit(1);
+    return c;
+  }
+
+  async insertExpense(tx: DbOrTx, row: typeof expenses.$inferInsert) {
+    const [r] = await tx.insert(expenses).values(row).returning({ id: expenses.id });
+    return r.id;
+  }
+
+  async findExpenseForUpdate(tx: DbOrTx, id: string): Promise<ExpenseRow | undefined> {
+    const [e] = await tx.select().from(expenses).where(eq(expenses.id, id)).for('update');
+    return e;
+  }
+
+  voidExpenseRow(tx: DbOrTx, id: string, userId: string) {
+    return tx.update(expenses).set({ voidedAt: new Date(), voidedBy: userId }).where(eq(expenses.id, id));
+  }
+
+  /** Shu xarajat uchun ombordan chiqarilgan qatorlar (qaytarishda teskari yoziladi). */
+  ownMovements(tx: DbOrTx, expenseId: string, refType: string) {
+    return tx.select().from(stockMovements).where(and(eq(stockMovements.refId, expenseId), eq(stockMovements.refType, refType)));
   }
 }

@@ -1,5 +1,5 @@
 import { INestApplication } from '@nestjs/common';
-import { as, code, createApp, seeded, uniq, type Client, type Seeded, today as todayStr } from './helpers.js';
+import { as, code, createApp, makeProduct, seeded, uniq, type Client, type Seeded, today as todayStr } from './helpers.js';
 
 describe('expenses (TZ 7.11, 9.12)', () => {
   let app: INestApplication;
@@ -83,5 +83,48 @@ describe('expenses (TZ 7.11, 9.12)', () => {
     expect(all.total).toBeGreaterThan(r.total); // main dagi yozuv ham
     const bux = (await as(app, 'buxgalter')).at(s.mainId);
     expect((await bux.get('/expenses?branchId=all')).body.items.every((x: { branchId: string }) => x.branchId === s.mainId)).toBe(true); // all faqat egasi uchun
+  });
+
+  it("O'zimga olish (kassadan): ombordan chiqadi, «O'zimga olingan» xarajati yoziladi; sotuv va kassa naqdiga ta'sir qilmaydi; qaytarish qoldiqni tiklaydi", async () => {
+    const p = await makeProduct(c, s, { stock: 20, price: 10000, cost: 6000, name: uniq('Olinadigan ') });
+    const stock = async () => (await c.get(`/products/${p.id}`)).body.stock;
+    const own = (qty: number, extra: object = {}) => c.post('/sales/own-use', { lines: [{ productId: p.id, unit: 'piece', qty, ...extra }], note: 'uy uchun' });
+    const salesBefore = (await c.get(`/sales?from=${today}&to=${today}`)).body.summary?.salesSum ?? 0;
+
+    const r = await own(3);
+    expect(r.status).toBe(201);
+    expect(r.body).toMatchObject({ amount: 18000, saleValue: 30000, lines: 1 }); // tannarx 3 × 6000
+    expect(await stock()).toBe(17);
+    const list = (await c.get(`/expenses?from=${today}&to=${today}&pageSize=100`)).body;
+    const row = list.items.find((e: { id: string }) => e.id === r.body.id);
+    expect(row).toMatchObject({ amount: 18000, source: 'other', shiftId: null });
+    expect(row.note).toContain('uy uchun');
+    expect(row.note).toContain('Olinadigan');
+    expect(list.summary.byCategory.some((x: { name: string }) => x.name === "O'zimga olingan")).toBe(true);
+    // sotuv hisobi o'zgarmaydi
+    expect((await c.get(`/sales?from=${today}&to=${today}`)).body.summary?.salesSum ?? 0).toBe(salesBefore);
+
+    // qoldiqdan ko'p — rad; huquqsiz xodim — 403; oddiy yo'l bilan o'chirish/tahrirlash/yozish taqiqlangan
+    expect(code(await own(500))).toBe('insufficient_stock');
+    expect((await s.kassir.at(branch).post('/sales/own-use', { lines: [{ productId: p.id, unit: 'piece', qty: 1 }] })).status).toBe(403);
+    expect(code(await c.post(`/expenses/${r.body.id}/void`, {}))).toBe('validation_failed');
+    expect(code(await c.patch(`/expenses/${r.body.id}`, { note: 'x' }))).toBe('validation_failed');
+    const ownCat = list.summary.byCategory.find((x: { name: string }) => x.name === "O'zimga olingan").categoryId;
+    expect(code(await c.post('/expenses', { date: today, categoryId: ownCat, amount: 5, methodId: s.methods.card, source: 'other' }))).toBe('validation_failed');
+
+    // qaytarish: qoldiq tiklanadi, xarajat o'chiriladi, takror — rad
+    expect((await c.post(`/sales/own-use/${r.body.id}/void`, {})).status).toBeLessThan(300);
+    expect(await stock()).toBe(20);
+    const after = (await c.get(`/expenses?from=${today}&to=${today}&pageSize=100`)).body;
+    expect(after.items.find((e: { id: string }) => e.id === r.body.id)).toBeUndefined();
+    expect(code(await c.post(`/sales/own-use/${r.body.id}/void`, {}))).toBe('already_voided');
+  });
+
+  it("O'zimga olish: tannarxi noma'lum mahsulot sotuv narxida yoziladi", async () => {
+    const free = await makeProduct(c, s, { stock: 10, price: 4000, name: uniq('Tannarxsiz ') });
+    const r = await c.post('/sales/own-use', { lines: [{ productId: free.id, unit: 'piece', qty: 2 }] });
+    expect(r.status).toBe(201);
+    expect(r.body.amount).toBe(8000);
+    expect((await c.get(`/products/${free.id}`)).body.stock).toBe(8);
   });
 });

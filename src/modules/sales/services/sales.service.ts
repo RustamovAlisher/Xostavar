@@ -4,6 +4,7 @@ import { runTx } from '../../../db/tx.js';
 import type { AuthUser } from '../../../common/decorators/auth-context.js';
 import { conflict, forbidden, isUniqueViolation, notFound, unprocessable } from '../../../common/errors/app-error.js';
 import { dayKey, qty4 } from '../../../common/utils/numbers.js';
+import { OWN_USE_CATEGORY, OWN_USE_REF, OWN_USE_VOID_REF } from '../../../common/constants/own-use.js';
 import { page } from '../../../common/utils/pagination.js';
 import { calcLine, factorOf, priceOf } from '../../../common/utils/pricing.js';
 import { AuditService } from '../../audit/services/audit.service.js';
@@ -14,7 +15,7 @@ import { InventoryService } from '../../inventory/services/inventory.service.js'
 import { SettingsService } from '../../settings/services/settings.service.js';
 import { ShiftsService } from '../../shifts/services/shifts.service.js';
 import type { DebtPaymentDto } from '../../customers/dto/customers.dto.js';
-import type { SaleDto, SalesListQuery } from '../dto/sales.dto.js';
+import type { OwnUseDto, SaleDto, SalesListQuery } from '../dto/sales.dto.js';
 import { toQuoteView, toSaleList, toSaleView, type QuotedLine, type QuoteWarning } from '../mappers/sales.mapper.js';
 import { SalesRepository } from '../repositories/sales.repository.js';
 
@@ -226,6 +227,65 @@ export class SalesService {
     // Tartib raqami — chek raqamining oxirgi qismi (MAIN-20261024-0007 → 7)
     const max = await this.repo.maxSeq(tx, branchId, prefix);
     return `${prefix}${String(max + 1).padStart(4, '0')}`;
+  }
+
+  /* ───────── O'zimga olish (kassadan mol egasi hisobiga) ───────── */
+
+  /**
+   * Savatdagi mollar sotilmaydi, pul olinmaydi: ombordan chiqariladi (`write_off`) va «O'zimga olingan» xarajatiga yoziladi.
+   * Xarajat summasi — tannarx bo'yicha (tannarxi noma'lum qatorda — sotuv narxida). Sotuv/tushum/smena hisobiga ta'sir qilmaydi
+   * (xarajat manbasi `other` — kassadagi naqd pul kamaymaydi). Bekor qilish: `ownUseVoid` (qoldiq qaytadi).
+   */
+  async ownUse(user: AuthUser, branchId: string, dto: OwnUseDto, requestId?: string) {
+    return runTx(this.db, async (tx) => {
+      await this.repo.lockBranch(tx, branchId);
+      const q = await this.quoteLines(tx, branchId, { lines: dto.lines }, true);
+      const methods = await this.repo.paymentMethods(tx);
+      // Xarajat jadvalida usul majburiy; pul harakatlanmaydi (manba `other`), shuning uchun naqd usul yoziladi
+      const method = methods.find((m) => m.kind === 'cash' && m.enabled) ?? methods.find((m) => m.enabled && m.kind !== 'debt');
+      if (!method) throw unprocessable('payment_method_disabled', "Yoqilgan to'lov usuli yo'q");
+      const cat = await this.repo.ensureCategory(tx, OWN_USE_CATEGORY);
+
+      const valueOf = (l: (typeof q.lines)[number]) => (l.costPerBase != null && l.costPerBase > 0 ? l.baseQty * l.costPerBase : l.lineTotal);
+      const amount = Math.max(1, Math.round(q.lines.reduce((a, l) => a + valueOf(l), 0)));
+      const shortOf = new Map((await this.repo.units(tx)).map((u) => [u.id, u.short]));
+      const list = q.lines.map((l) => `${l.name}${l.variantName ? ` (${l.variantName})` : ''} — ${qty4(l.qty).toLocaleString('ru-RU')} ${shortOf.get(l.unit) ?? l.unit}`).join('; ');
+      const note = `${dto.note?.trim() ? `${dto.note.trim()}. ` : ''}Ombordan olindi: ${list}`.slice(0, 480);
+      const expenseId = await this.repo.insertExpense(tx, {
+        branchId, date: dayKey(new Date()), categoryId: cat.id, amount, methodId: method.id, source: 'other', shiftId: null, supplierId: null,
+        note, createdBy: user.id, createdByName: user.name,
+      });
+      for (const [key, need] of q.need) {
+        const lvl = q.levels.get(key)!;
+        const l = q.lines.find((x) => `${x.productId}|${x.variantId ?? ''}` === key)!;
+        await this.inventory.applyMovement(tx, lvl, { branchId, productId: l.productId, variantId: l.variantId, type: 'write_off', qtyBase: -need, unit: l.unit, qtyUnit: -need, costPerBase: lvl.costPrice, refType: OWN_USE_REF, refId: expenseId, userId: user.id });
+      }
+      await this.audit.log(user, { action: 'expense', module: 'Xarajatlar', targetId: expenseId, targetName: OWN_USE_CATEGORY, branchId, requestId, details: `O'zimga olindi: ${amount.toLocaleString('ru-RU')} so'm (tannarxda). ${list}` }, tx);
+      return { id: expenseId, amount, saleValue: q.total, lines: q.lines.length };
+    });
+  }
+
+  /** O'zimga olishni bekor qilish: ombor qoldig'i qaytadi, xarajat o'chiriladi. Yozgan xodim yoki administrator. */
+  async ownUseVoid(user: AuthUser, branchId: string, id: string, requestId?: string) {
+    await runTx(this.db, async (tx) => {
+      await this.repo.lockBranch(tx, branchId);
+      const e = await this.repo.findExpenseForUpdate(tx, id);
+      if (!e) throw notFound('Yozuv');
+      const cat = await this.repo.ensureCategory(tx, OWN_USE_CATEGORY);
+      if (e.categoryId !== cat.id) throw unprocessable('validation_failed', "Bu «O'zimga olingan» yozuvi emas");
+      if (e.branchId !== branchId) throw forbidden("Boshqa filial yozuvi", 'branch_forbidden');
+      if (e.voidedAt) throw conflict('already_voided', 'Bu yozuv allaqachon bekor qilingan');
+      if (e.createdBy !== user.id && !user.permissions.includes('manage_users')) throw forbidden("Boshqa xodim yozgan yozuvni faqat administrator bekor qiladi");
+      const moves = await this.repo.ownMovements(tx, id, OWN_USE_REF);
+      const levels = await this.inventory.lockLevels(tx, branchId, moves.map((m) => ({ productId: m.productId, variantId: m.variantId })), true);
+      for (const m of moves) {
+        const key = `${m.productId}|${m.variantId ?? ''}`;
+        await this.inventory.applyMovement(tx, levels.get(key)!, { branchId, productId: m.productId, variantId: m.variantId, type: 'adjustment', qtyBase: -Number(m.qtyBase), unit: m.unit, qtyUnit: -Number(m.qtyUnit), costPerBase: m.costPerBase == null ? null : Number(m.costPerBase), refType: OWN_USE_VOID_REF, refId: id, userId: user.id });
+      }
+      await this.repo.voidExpenseRow(tx, id, user.id);
+      await this.audit.log(user, { action: 'delete', module: 'Xarajatlar', targetId: id, targetName: OWN_USE_CATEGORY, branchId, requestId, details: `O'zimga olish bekor qilindi: ${e.amount.toLocaleString('ru-RU')} so'm, qoldiq qaytarildi` }, tx);
+    });
+    return { id, voided: true };
   }
 
   /* ───────── Qarz to'lovi (TZ 8.8) ───────── */
