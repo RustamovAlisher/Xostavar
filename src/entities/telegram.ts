@@ -53,7 +53,7 @@ export const notificationOutbox = pgTable(
   'notification_outbox',
   {
     id: id(),
-    kind: text('kind', { enum: ['sale', 'void', 'debt_payment', 'daily', 'test'] }).notNull(),
+    kind: text('kind', { enum: ['sale', 'void', 'debt_payment', 'own_use', 'daily', 'test'] }).notNull(),
     refId: uuid('ref_id'),
     branchId: uuid('branch_id'),
     payload: jsonb('payload').$type<Record<string, unknown>>(),

@@ -232,13 +232,13 @@ export class SalesService {
   /* ───────── O'zimga olish (kassadan mol egasi hisobiga) ───────── */
 
   /**
-   * Savatdagi mollar sotilmaydi, pul olinmaydi: ombordan chiqariladi (`write_off`) va «O'zimga olingan» xarajatiga yoziladi.
-   * Xarajat summasi — tannarx bo'yicha (tannarxi noma'lum qatorda — sotuv narxida). Sotuv/tushum/smena hisobiga ta'sir qilmaydi
-   * (xarajat manbasi `other` — kassadagi naqd pul kamaymaydi). Bekor qilish: `ownUseVoid` (qoldiq qaytadi).
+   * Savatdagi mollar sotilmaydi, pul olinmaydi: ombordan chiqariladi (`write_off`) va kassadagi narxda «O'zimga olingan»
+   * xarajatiga yoziladi. Sotuv/tushum/foyda/smena hisobiga ta'sir qilmaydi (xarajat manbasi `other` — kassadagi naqd kamaymaydi).
+   * Telegram botga xabar ketadi. Bekor qilish: `ownUseVoid` (qoldiq qaytadi). Hamma xodim (view_pos) qila oladi.
    */
   async ownUse(user: AuthUser, branchId: string, dto: OwnUseDto, requestId?: string) {
     return runTx(this.db, async (tx) => {
-      await this.repo.lockBranch(tx, branchId);
+      const branch = await this.repo.lockBranch(tx, branchId);
       const q = await this.quoteLines(tx, branchId, { lines: dto.lines }, true);
       const methods = await this.repo.paymentMethods(tx);
       // Xarajat jadvalida usul majburiy; pul harakatlanmaydi (manba `other`), shuning uchun naqd usul yoziladi
@@ -246,10 +246,11 @@ export class SalesService {
       if (!method) throw unprocessable('payment_method_disabled', "Yoqilgan to'lov usuli yo'q");
       const cat = await this.repo.ensureCategory(tx, OWN_USE_CATEGORY);
 
-      const valueOf = (l: (typeof q.lines)[number]) => (l.costPerBase != null && l.costPerBase > 0 ? l.baseQty * l.costPerBase : l.lineTotal);
-      const amount = Math.max(1, Math.round(q.lines.reduce((a, l) => a + valueOf(l), 0)));
+      // Summa — kassada ko'ringan narxda (chegirmasiz): shuncha xarajatga yoziladi
+      const amount = Math.max(1, Math.round(q.lines.reduce((a, l) => a + l.lineTotal, 0)));
       const shortOf = new Map((await this.repo.units(tx)).map((u) => [u.id, u.short]));
-      const list = q.lines.map((l) => `${l.name}${l.variantName ? ` (${l.variantName})` : ''} — ${qty4(l.qty).toLocaleString('ru-RU')} ${shortOf.get(l.unit) ?? l.unit}`).join('; ');
+      const unitName = (u: string) => shortOf.get(u) ?? u;
+      const list = q.lines.map((l) => `${l.name}${l.variantName ? ` (${l.variantName})` : ''} — ${qty4(l.qty).toLocaleString('ru-RU')} ${unitName(l.unit)}`).join('; ');
       const note = `${dto.note?.trim() ? `${dto.note.trim()}. ` : ''}Ombordan olindi: ${list}`.slice(0, 480);
       const expenseId = await this.repo.insertExpense(tx, {
         branchId, date: dayKey(new Date()), categoryId: cat.id, amount, methodId: method.id, source: 'other', shiftId: null, supplierId: null,
@@ -260,8 +261,12 @@ export class SalesService {
         const l = q.lines.find((x) => `${x.productId}|${x.variantId ?? ''}` === key)!;
         await this.inventory.applyMovement(tx, lvl, { branchId, productId: l.productId, variantId: l.variantId, type: 'write_off', qtyBase: -need, unit: l.unit, qtyUnit: -need, costPerBase: lvl.costPrice, refType: OWN_USE_REF, refId: expenseId, userId: user.id });
       }
-      await this.audit.log(user, { action: 'expense', module: 'Xarajatlar', targetId: expenseId, targetName: OWN_USE_CATEGORY, branchId, requestId, details: `O'zimga olindi: ${amount.toLocaleString('ru-RU')} so'm (tannarxda). ${list}` }, tx);
-      return { id: expenseId, amount, saleValue: q.total, lines: q.lines.length };
+      await this.audit.log(user, { action: 'expense', module: 'Xarajatlar', targetId: expenseId, targetName: OWN_USE_CATEGORY, branchId, requestId, details: `O'zimga olindi: ${amount.toLocaleString('ru-RU')} so'm. ${list}` }, tx);
+      await this.notify.enqueueOwnUse(tx, expenseId, branchId, {
+        branchName: branch?.name ?? '', userName: user.name, createdAt: new Date().toISOString(), amount,
+        lines: q.lines.map((l) => ({ name: l.name, variantName: l.variantName, qty: l.qty, unit: unitName(l.unit), unitPrice: l.unitPrice, lineTotal: l.lineTotal, cuts: l.cuts ?? null })),
+      });
+      return { id: expenseId, amount, lines: q.lines.length };
     });
   }
 

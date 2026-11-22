@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { dailyReportMessage, esc, money, receiptsListMessages, saleMessage, usd, type DayReport, type ReceiptRow } from './telegram.format.js';
+import { dailyReportMessage, esc, money, ownUseMessage, receiptsListMessages, saleMessage, usd, type DayReport, type ReceiptRow } from './telegram.format.js';
 import { coversBranch, dailyDue, linkCode, nextDailyAt, tashkentDay, wants } from './telegram.rules.js';
 import type { TelegramChatRow } from '../repositories/telegram.repository.js';
 
@@ -79,6 +79,23 @@ describe('formatlash', () => {
     expect(m.length).toBeLessThan(4096);
     expect(m).toMatch(/va yana \d+ ta mahsulot/);
     expect(m).toContain("JAMI: 800 000 so'm"); // jami/to'lov qismi hech qachon kesilmaydi
+  });
+
+  it("«O'zimga olindi» xabari: kim, nima, kesim, xarajatga yozilgan summa; sotuv emasligi aytilgan", () => {
+    const m = ownUseMessage({
+      branchName: 'Asosiy', userName: 'Aziz', createdAt: tk('2026-11-22 10:15'), amount: 280_000,
+      lines: [
+        { name: 'Truba kvadrat', variantName: '40×40×2 mm', qty: 12, unit: 'm', unitPrice: 17_500, lineTotal: 210_000, cuts: [{ lengthMeters: 6, quantity: 2 }] },
+        { name: 'Montaj kleyi', qty: 1, unit: 'dona', unitPrice: 70_000, lineTotal: 70_000 },
+      ],
+    });
+    expect(m).toContain("🏠 <b>O'ZIMGA OLINDI</b>");
+    expect(m).toContain('🕐 22.11.2026 10:15 · Kim: <b>Aziz</b>');
+    expect(m).toContain("12 m × 17 500 = <b>210 000 so'm</b>");
+    expect(m).toContain('✂️ <b>KESIB BERISH KERAK</b>');
+    expect(m).toContain("💸 <b>Xarajatga yozildi: 280 000 so'm</b>");
+    expect(m).toContain('Bu sotuv emas');
+    expect(m).toContain('<i>Asosiy</i>');
   });
 
   it('kun yakuni: foyda faqat ruxsat bo\'lsa; bo\'sh kun', () => {

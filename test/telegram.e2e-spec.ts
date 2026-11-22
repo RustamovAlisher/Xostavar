@@ -92,6 +92,23 @@ describe('telegram savdo boti', () => {
     expect(chats[0]).toMatchObject({ chatId: GROUP, type: 'supergroup', title: "Do'kon guruhi", branchIds: null, notifySales: true, active: true });
   });
 
+  it("«O'zimga olindi»: botga xabar ketadi (kimdan, nima, qancha, xarajatga yozilgani)", async () => {
+    const mine = (await c.post('/products', { name: uniq('Olingan <tovar> '), categoryId: s.cats['Asbob-uskunalar'], baseUnit: 'piece', isDivisible: false, conversions: [], isVariable: false, retailPrice: 20_000 }, { idem: false })).body.id;
+    await c.post('/stock-in', { lines: [{ productId: mine, unit: 'piece', qty: 10, costPerUnit: 12_000 }] });
+    const before = countTo(GROUP);
+    const r = await c.post('/sales/own-use', { lines: [{ productId: mine, unit: 'piece', qty: 3 }] });
+    expect(r.status).toBe(201);
+    await worker.processOnce();
+    expect(countTo(GROUP)).toBe(before + 1);
+    const msg = lastTo(GROUP);
+    expect(msg).toContain("🏠 <b>O'ZIMGA OLINDI</b>");
+    expect(msg).toContain('Olingan &lt;tovar&gt;');
+    expect(msg).toContain('3 dona × 20 000 = <b>60 000 so\'m</b>');
+    expect(msg).toContain("Xarajatga yozildi: 60 000 so'm");
+    await worker.processOnce();
+    expect(countTo(GROUP)).toBe(before + 1); // takror yuborilmaydi
+  });
+
   it("har sotuv va bekor qilish xabari; minimal summa va filial filtri", async () => {
     prodId = (await c.post('/products', { name: uniq('Sement <M400> '), categoryId: s.cats['Asbob-uskunalar'], baseUnit: 'piece', isDivisible: false, conversions: [], isVariable: false, retailPrice: 50_000 }, { idem: false })).body.id;
     await c.post('/stock-in', { lines: [{ productId: prodId, unit: 'piece', qty: 50, costPerUnit: 30_000 }] });

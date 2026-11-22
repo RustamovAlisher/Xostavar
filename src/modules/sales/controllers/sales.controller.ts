@@ -29,7 +29,7 @@ export class SalesController {
 
   /** Kassadan «O'zimga»: mollar ombordan chiqariladi va xarajatga yoziladi (sotuv emas). */
   @Post('own-use')
-  @Perms('manage_expenses')
+  @Perms('view_pos')
   @Idempotent()
   ownUse(@CurrentUser() u: AuthUser, @BranchId() branchId: string, @Req() req: AuthRequest, @Body() dto: OwnUseDto) {
     return this.sales.ownUse(u, branchId, dto, requestIdOf(req));
@@ -37,7 +37,7 @@ export class SalesController {
 
   /** «O'zimga olish»ni bekor qilish: qoldiq qaytadi. */
   @Post('own-use/:id/void')
-  @Perms('manage_expenses')
+  @Perms('view_pos', 'manage_expenses')
   @Idempotent()
   ownUseVoid(@CurrentUser() u: AuthUser, @BranchId() branchId: string, @Req() req: AuthRequest, @Param('id', ParseUUIDPipe) id: string) {
     return this.sales.ownUseVoid(u, branchId, id, requestIdOf(req));

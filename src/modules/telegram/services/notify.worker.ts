@@ -1,6 +1,6 @@
 import { Inject, Injectable, Logger, type OnApplicationBootstrap, type OnApplicationShutdown } from '@nestjs/common';
 import { DB, type Db } from '../../../db/db.module.js';
-import { dailyReportMessage, debtPaymentMessage, esc, saleMessage, voidMessage } from '../mappers/telegram.format.js';
+import { dailyReportMessage, debtPaymentMessage, esc, ownUseMessage, saleMessage, voidMessage, type OwnUseMsgInput } from '../mappers/telegram.format.js';
 import { dailyDue, MAX_ATTEMPTS, nextDailyAt, RETRY_DELAYS_S, tashkentDay, wants, type EventCtx } from '../mappers/telegram.rules.js';
 import { TelegramRepository, type OutboxRow, type TelegramChatRow } from '../repositories/telegram.repository.js';
 import { NotifyService } from './notify.service.js';
@@ -104,6 +104,10 @@ export class NotifyWorker implements OnApplicationBootstrap, OnApplicationShutdo
       }
       ctx = { branchId: data.s.branchId, total: data.s.totalAmount, remainingDebt: data.s.remainingDebt };
       const html = row.kind === 'sale' ? saleMessage(data.sale) : row.kind === 'void' && data.voided ? voidMessage(data.voided) : debtPaymentMessage(data.debt);
+      render = async () => ({ html });
+    } else if (row.kind === 'own_use') {
+      const o = row.payload as unknown as Omit<OwnUseMsgInput, 'createdAt'> & { createdAt: string };
+      const html = ownUseMessage({ ...o, createdAt: new Date(o.createdAt) });
       render = async () => ({ html });
     } else if (row.kind === 'daily') {
       const day = typeof row.payload?.day === 'string' ? row.payload.day : tashkentDay();

@@ -51,7 +51,7 @@ export class SalesRepository {
 
   /** Filial qatorini FOR UPDATE bilan qulflaydi (chek raqami ketma-ketligi); filial kodini qaytaradi. */
   lockBranch(tx: DbOrTx, branchId: string) {
-    return tx.select({ code: branches.code }).from(branches).where(eq(branches.id, branchId)).for('update').then((r) => r[0] ?? null);
+    return tx.select({ code: branches.code, name: branches.name }).from(branches).where(eq(branches.id, branchId)).for('update').then((r) => r[0] ?? null);
   }
 
   /** Kun ichidagi oxirgi tartib raqami — chek raqamining oxirgi qismi (MAIN-20261024-0007 → 7). */

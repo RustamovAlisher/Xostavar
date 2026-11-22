@@ -18,9 +18,15 @@ export class NotifyService {
     this.dailyAt = config.get('SALES_BOT_DAILY_AT', { infer: true });
   }
 
-  async enqueue(tx: DbOrTx, kind: Exclude<OutboxKind, 'daily' | 'test'>, refId: string, branchId: string) {
+  async enqueue(tx: DbOrTx, kind: Exclude<OutboxKind, 'daily' | 'test' | 'own_use'>, refId: string, branchId: string) {
     if (!this.enabled) return;
     await this.repo.enqueue(tx, { kind, refId, branchId, dedupeKey: `${kind}:${refId}` });
+  }
+
+  /** «O'zimga olindi»: chek yo'q (sotuv emas), shuning uchun xabar ma'lumoti navbat yozuvining o'zida (payload) saqlanadi. */
+  async enqueueOwnUse(tx: DbOrTx, expenseId: string, branchId: string, payload: Record<string, unknown>) {
+    if (!this.enabled) return;
+    await this.repo.enqueue(tx, { kind: 'own_use', refId: expenseId, branchId, payload, dedupeKey: `own_use:${expenseId}` });
   }
 
   /** Kun yakuni (bir kunga bitta). */

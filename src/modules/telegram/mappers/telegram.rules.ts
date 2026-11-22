@@ -28,6 +28,8 @@ export function wants(chat: TelegramChatRow, kind: OutboxKind, ctx: EventCtx): b
       return chat.notifyVoids;
     case 'debt_payment':
       return chat.notifyDebts;
+    case 'own_use':
+      return chat.notifySales; // sotuv xabarlarini oladigan chat buni ham oladi (summa chegarasi qo'llanmaydi)
     case 'daily':
       return chat.dailyReport;
     default:

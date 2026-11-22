@@ -142,6 +142,27 @@ export function saleMessage(s: SaleMsgInput): string {
   return `${head}\n${linesBlock(s.lines, MSG_LIMIT - head.length - footStr.length - 4)}\n${footStr}`;
 }
 
+export interface OwnUseMsgInput { branchName: string; userName: string; createdAt: Date; lines: LineView[]; amount: number }
+
+/** «O'zimga olindi» xabari: kim nimani oldi, qancha (kassadagi narxda) va u xarajatga yozilgani. Sotuv emas — foydaga kirmaydi. */
+export function ownUseMessage(o: OwnUseMsgInput): string {
+  const head = [
+    '🏠 <b>O\'ZIMGA OLINDI</b>',
+    `🕐 ${dateTimeTk(o.createdAt)} · Kim: <b>${esc(o.userName)}</b>`,
+    RULE,
+  ].join('\n');
+  const cuts = cutSection(o.lines);
+  const foot = [
+    ...(cuts ? [RULE, cuts] : []),
+    RULE,
+    `💸 <b>Xarajatga yozildi: ${money(o.amount)} so'm</b>`,
+    "<i>Bu sotuv emas: pul olinmadi, foydaga kirmaydi — xarajatlar bo'limiga tushdi.</i>",
+    '',
+    `<i>${esc(o.branchName)}</i>`,
+  ].join('\n');
+  return `${head}\n${linesBlock(o.lines, MSG_LIMIT - head.length - foot.length - 4)}\n${foot}`;
+}
+
 export interface VoidMsgInput { number: string; branchName: string; cashierName: string; customerName: string; total: number; createdAt: Date; voidedAt: Date; voidedByName?: string | null; reason?: string | null; lines: LineView[] }
 
 export function voidMessage(v: VoidMsgInput): string {
