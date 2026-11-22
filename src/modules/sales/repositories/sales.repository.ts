@@ -1,5 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { and, desc, eq, gte, ilike, inArray, lte, or, sql } from 'drizzle-orm';
+import { and, desc, eq, exists, gt, gte, ilike, inArray, lte, or, sql, type SQL } from 'drizzle-orm';
 import { DB, type Db, type DbOrTx } from '../../../db/db.module.js';
 import { branches, paymentMethods, saleLines, salePayments, sales, units } from '../../../entities/index.js';
 import type { SalesListQuery } from '../dto/sales.dto.js';
@@ -127,8 +127,9 @@ export class SalesRepository {
   }
 
   /** Ro'yxat + jami (2 ta so'rov). `cashierId` servisda hal qilinadi: kassir uchun o'ziniki, aks holda filtr. */
-  list(branchId: string, cashierId: string | undefined, q: SalesListQuery, tx: DbOrTx = this.db) {
-    const where = and(
+  /** Ro'yxat va jamilar uchun bitta filtr (davr, kassir, tur, holat, qidiruv, to'lov turi). */
+  private where(branchId: string, cashierId: string | undefined, q: Omit<SalesListQuery, 'offset'>): SQL | undefined {
+    return and(
       eq(sales.branchId, branchId),
       cashierId ? eq(sales.cashierId, cashierId) : undefined,
       q.from ? gte(sales.createdAt, new Date(q.from)) : undefined,
@@ -138,10 +139,60 @@ export class SalesRepository {
       q.type === 'sale' || q.type === 'debt_payment' ? eq(sales.type, q.type) : undefined,
       q.status === 'voided' ? eq(sales.status, 'voided') : q.status === 'completed' ? eq(sales.status, 'completed') : undefined,
       this.textFilter(q.q),
+      q.method === 'debt'
+        ? and(eq(sales.type, 'sale'), gt(sales.remainingDebt, 0))
+        : q.method
+          ? exists(this.db.select({ x: sql`1` }).from(salePayments).where(and(eq(salePayments.saleId, sales.id), eq(salePayments.methodCode, q.method))))
+          : undefined,
     );
+  }
+
+  list(branchId: string, cashierId: string | undefined, q: SalesListQuery, tx: DbOrTx = this.db) {
+    const where = this.where(branchId, cashierId, q);
     return Promise.all([
       tx.select().from(sales).where(where).orderBy(desc(sales.createdAt)).limit(q.pageSize).offset(q.offset),
       tx.select({ total: sql<number>`count(*)::int` }).from(sales).where(where).then((r) => r[0].total),
     ]);
+  }
+
+  private async debtTotals(branchId: string, cashierId: string | undefined, q: SalesListQuery, tx: DbOrTx) {
+    const [d] = await tx.select({
+      debtAll: sql<number>`coalesce(sum(${sales.remainingDebt}) filter (where ${sales.type} = 'sale' and ${sales.status} = 'completed'), 0)::bigint`,
+      debtSalesAll: sql<number>`count(*) filter (where ${sales.type} = 'sale' and ${sales.status} = 'completed' and ${sales.remainingDebt} > 0)::int`,
+    }).from(sales).where(this.where(branchId, cashierId, { ...q, method: undefined }));
+    return { debtAll: Number(d.debtAll), debtSalesAll: Number(d.debtSalesAll) };
+  }
+
+  /**
+   * Tanlangan davr (filtr) bo'yicha jamilar — sahifalashsiz, butun to'plamdan:
+   * cheklar soni, sotuv summasi, kassaga tushgan, nasiya, bekor qilinganlar va to'lov turlari kesimi.
+   */
+  async summary(branchId: string, cashierId: string | undefined, q: SalesListQuery, tx: DbOrTx = this.db) {
+    const where = this.where(branchId, cashierId, q);
+    const [t] = await tx.select({
+      sales: sql<number>`count(*) filter (where ${sales.type} = 'sale' and ${sales.status} = 'completed')::int`,
+      salesSum: sql<number>`coalesce(sum(${sales.totalAmount}) filter (where ${sales.type} = 'sale' and ${sales.status} = 'completed'), 0)::bigint`,
+      paid: sql<number>`coalesce(sum(${sales.paidAmount}) filter (where ${sales.status} = 'completed'), 0)::bigint`,
+      debt: sql<number>`coalesce(sum(${sales.remainingDebt}) filter (where ${sales.type} = 'sale' and ${sales.status} = 'completed'), 0)::bigint`,
+      debtSales: sql<number>`count(*) filter (where ${sales.type} = 'sale' and ${sales.status} = 'completed' and ${sales.remainingDebt} > 0)::int`,
+      voided: sql<number>`count(*) filter (where ${sales.status} = 'voided')::int`,
+    }).from(sales).where(where);
+    const methods = await tx.select({
+      code: salePayments.methodCode,
+      kind: salePayments.kind,
+      type: sales.type,
+      amount: sql<number>`coalesce(sum(${salePayments.amount}), 0)::bigint`,
+      count: sql<number>`count(distinct ${sales.id})::int`,
+    }).from(salePayments).innerJoin(sales, eq(sales.id, salePayments.saleId))
+      // Kesim to'lov turi filtriga bog'liq emas — karta bosilganda boshqalari 0 ga tushmasin
+      .where(and(this.where(branchId, cashierId, { ...q, method: undefined }), eq(sales.status, 'completed')))
+      .groupBy(salePayments.methodCode, salePayments.kind, sales.type);
+    return {
+      sales: Number(t.sales), salesSum: Number(t.salesSum), paid: Number(t.paid), debt: Number(t.debt),
+      debtSales: Number(t.debtSales), voided: Number(t.voided),
+      // Nasiya kartasi ham filtrsiz (kesim bilan bir xil asosda)
+      ...(q.method ? await this.debtTotals(branchId, cashierId, q, tx) : {}),
+      methods: methods.map((m) => ({ code: m.code, kind: m.kind, type: m.type as 'sale' | 'debt_payment', amount: Number(m.amount), count: Number(m.count) })),
+    };
   }
 }

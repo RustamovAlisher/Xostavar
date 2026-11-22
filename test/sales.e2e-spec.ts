@@ -280,6 +280,36 @@ describe('sales (TZ 8, 9.6, 20)', () => {
   });
 
   describe('ro\'yxat', () => {
+    it("jamilar (summary): butun davr bo'yicha, to'lov turlari kesimi; method filtri (cash / card / debt)", async () => {
+      const br = (await s.admin.post('/branches', { name: uniq('Hisobot ') }, { idem: false })).body.id;
+      const b = s.admin.at(br);
+      const mp = await makeProduct(b, s, { stock: 50, price: 10000 });
+      const cust = (await b.post('/customers', { name: 'Jami Mijoz', phone: phone(), creditLimit: 1_000_000 }, { idem: false })).body;
+      const closeB = await ensureShift(b);
+      const line = (qty: number) => [{ productId: mp.id, unit: 'piece', qty }];
+      expect((await b.post('/sales', { lines: line(1), payments: cash(10000) })).status).toBe(201);
+      expect((await b.post('/sales', { lines: line(2), payments: [{ methodId: s.methods.card, amount: 20000 }] })).status).toBe(201);
+      expect((await b.post('/sales', { lines: line(3), payments: [{ methodId: s.methods.cash, amount: 5000 }, { methodId: s.methods.card, amount: 15000 }], customerId: cust.id, onCredit: true })).status).toBe(201);
+      const v = (await b.post('/sales', { lines: line(1), payments: cash(10000) })).body;
+      expect((await b.post(`/sales/${v.id}/void`, { reason: 'test' })).status).toBeLessThan(300);
+      const day = todayStr();
+      const r = await b.get(`/sales?from=${day}&to=${day}&pageSize=1`);
+      expect(r.status).toBe(200);
+      expect(r.body.items).toHaveLength(1); // sahifa 1 ta, jamilar esa hammasidan
+      expect(r.body.summary).toMatchObject({ sales: 3, salesSum: 60000, paid: 50000, debt: 10000, debtSales: 1, voided: 1 });
+      const m = Object.fromEntries(r.body.summary.methods.filter((x: { type: string }) => x.type === 'sale').map((x: { code: string; amount: number; count: number }) => [x.code, x]));
+      expect(m.cash).toMatchObject({ amount: 15000, count: 2 });
+      expect(m.card).toMatchObject({ amount: 35000, count: 2 });
+      const byMethod = async (meth: string) => (await b.get(`/sales?from=${day}&to=${day}&status=completed&method=${meth}`)).body;
+      expect((await byMethod('card')).total).toBe(2);
+      expect((await byMethod('debt')).summary).toMatchObject({ sales: 1, debt: 10000 });
+      const cashOnly = (await byMethod('cash')).summary;
+      expect(cashOnly.salesSum).toBe(40000);
+      // kesim filtrdan qat'i nazar to'liq
+      expect(cashOnly.methods.find((x: { code: string; type: string }) => x.code === 'card' && x.type === 'sale').amount).toBe(35000);
+      expect(cashOnly).toMatchObject({ debtAll: 10000, debtSalesAll: 1 });
+      await closeB();
+    });
     it('filtrlar: davr, tur, holat, mijoz, qidiruv (raqam/mijoz/mahsulot); kassir faqat o\'z cheklarini ko\'radi', async () => {
       const all = (await c.get('/sales?pageSize=200')).body;
       expect(all.total).toBeGreaterThan(5);

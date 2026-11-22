@@ -53,4 +53,6 @@ export class SalesListQuery extends PageQuery {
   @IsOptional() @IsString() type?: string;
   @IsOptional() @IsString() status?: string;
   @IsOptional() @IsString() q?: string;
+  @ApiPropertyOptional({ description: "To'lov turi bo'yicha: usul kodi (cash, card, transfer, …) yoki 'debt' — nasiyali sotuvlar" })
+  @IsOptional() @IsString() @MaxLength(40) method?: string;
 }

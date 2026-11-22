@@ -307,8 +307,9 @@ export class SalesService {
 
   /** Ro'yxat: kassir faqat o'zinikini, `view_all_sales` hammasini (TZ 9.6). 4 ta so'rov. */
   async list(user: AuthUser, branchId: string, q: SalesListQuery) {
-    const [items, total] = await this.repo.list(branchId, this.seeAll(user) ? q.cashierId : user.id, q);
+    const cashier = this.seeAll(user) ? q.cashierId : user.id;
+    const [[items, total], summary] = await Promise.all([this.repo.list(branchId, cashier, q), this.repo.summary(branchId, cashier, q)]);
     const [lines, pays] = await this.repo.detailsMany(items.map((s) => s.id));
-    return page(toSaleList(items, lines, pays, this.withCost(user)), total, q);
+    return { ...page(toSaleList(items, lines, pays, this.withCost(user)), total, q), summary };
   }
 }
