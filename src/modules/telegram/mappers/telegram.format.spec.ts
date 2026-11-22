@@ -93,7 +93,7 @@ describe('formatlash', () => {
     expect(m).toContain('🕐 22.11.2026 10:15 · Kim: <b>Aziz</b>');
     expect(m).toContain("12 m × 17 500 = <b>210 000 so'm</b>");
     expect(m).toContain('✂️ <b>KESIB BERISH KERAK</b>');
-    expect(m).toContain("💸 <b>Xarajatga yozildi: 280 000 so'm</b>");
+    expect(m).toContain("💸 <b>Xarajatga yozildi (tannarxda): 280 000 so'm</b>");
     expect(m).toContain('Bu sotuv emas');
     expect(m).toContain('<i>Asosiy</i>');
   });

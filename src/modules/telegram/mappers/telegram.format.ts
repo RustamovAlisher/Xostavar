@@ -155,8 +155,8 @@ export function ownUseMessage(o: OwnUseMsgInput): string {
   const foot = [
     ...(cuts ? [RULE, cuts] : []),
     RULE,
-    `💸 <b>Xarajatga yozildi: ${money(o.amount)} so'm</b>`,
-    "<i>Bu sotuv emas: pul olinmadi, foydaga kirmaydi — xarajatlar bo'limiga tushdi.</i>",
+    `💸 <b>Xarajatga yozildi (tannarxda): ${money(o.amount)} so'm</b>`,
+    "<i>Bu sotuv emas: pul olinmadi, sotuv narxi olinmadi — tannarx xarajatlar bo'limiga tushdi.</i>",
     '',
     `<i>${esc(o.branchName)}</i>`,
   ].join('\n');

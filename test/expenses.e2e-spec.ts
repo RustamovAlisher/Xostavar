@@ -93,11 +93,11 @@ describe('expenses (TZ 7.11, 9.12)', () => {
 
     const r = await own(3);
     expect(r.status).toBe(201);
-    expect(r.body).toMatchObject({ amount: 30000, lines: 1 }); // kassadagi narxda: 3 × 10 000 (tannarx emas)
+    expect(r.body).toMatchObject({ amount: 18000, lines: 1 }); // TANNARXDA: 3 × 6 000 (sotuv narxi 10 000 olinmaydi)
     expect(await stock()).toBe(17);
     const list = (await c.get(`/expenses?from=${today}&to=${today}&pageSize=100`)).body;
     const row = list.items.find((e: { id: string }) => e.id === r.body.id);
-    expect(row).toMatchObject({ amount: 30000, source: 'other', shiftId: null });
+    expect(row).toMatchObject({ amount: 18000, source: 'other', shiftId: null });
     expect(row.note).toContain('uy uchun');
     expect(row.note).toContain('Olinadigan');
     expect(list.summary.byCategory.some((x: { name: string }) => x.name === "O'zimga olingan")).toBe(true);
@@ -119,11 +119,11 @@ describe('expenses (TZ 7.11, 9.12)', () => {
     expect(code(await c.post(`/sales/own-use/${r.body.id}/void`, {}))).toBe('already_voided');
   });
 
-  it("O'zimga olish: narxi o'zgartirilgan qator kassadagi (o'zgargan) narxda yoziladi", async () => {
+  it("O'zimga olish: tannarxi kiritilmagan mahsulotda kassadagi narx olinadi", async () => {
     const free = await makeProduct(c, s, { stock: 10, price: 4000, name: uniq('Tannarxsiz ') });
-    const r = await c.post('/sales/own-use', { lines: [{ productId: free.id, unit: 'piece', qty: 2, unitPrice: 3500 }] });
+    const r = await c.post('/sales/own-use', { lines: [{ productId: free.id, unit: 'piece', qty: 2 }] });
     expect(r.status).toBe(201);
-    expect(r.body.amount).toBe(7000); // kassir yozgan narx 3 500 × 2
+    expect(r.body.amount).toBe(8000); // tannarx noma'lum — shu qatorda kassadagi narx (4 000 × 2)
     expect((await c.get(`/products/${free.id}`)).body.stock).toBe(8);
   });
 });

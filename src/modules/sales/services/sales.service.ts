@@ -232,7 +232,7 @@ export class SalesService {
   /* ───────── O'zimga olish (kassadan mol egasi hisobiga) ───────── */
 
   /**
-   * Savatdagi mollar sotilmaydi, pul olinmaydi: ombordan chiqariladi (`write_off`) va kassadagi narxda «O'zimga olingan»
+   * Savatdagi mollar sotilmaydi, pul olinmaydi: ombordan chiqariladi (`write_off`) va TANNARXDA «O'zimga olingan»
    * xarajatiga yoziladi. Sotuv/tushum/foyda/smena hisobiga ta'sir qilmaydi (xarajat manbasi `other` — kassadagi naqd kamaymaydi).
    * Telegram botga xabar ketadi. Bekor qilish: `ownUseVoid` (qoldiq qaytadi). Hamma xodim (view_pos) qila oladi.
    */
@@ -246,8 +246,13 @@ export class SalesService {
       if (!method) throw unprocessable('payment_method_disabled', "Yoqilgan to'lov usuli yo'q");
       const cat = await this.repo.ensureCategory(tx, OWN_USE_CATEGORY);
 
-      // Summa — kassada ko'ringan narxda (chegirmasiz): shuncha xarajatga yoziladi
-      const amount = Math.max(1, Math.round(q.lines.reduce((a, l) => a + l.lineTotal, 0)));
+      // Xarajatga TANNARX yoziladi (sotuv narxi olinmaydi): har qator = asosiy birlikdagi miqdor × tannarx.
+      // Tannarxi hali kiritilmagan mahsulotda qiymatni bilib bo'lmaydi — shu qatorda kassadagi narx olinadi.
+      const valued = q.lines.map((l) => {
+        const value = Math.round(l.costPerBase != null && l.costPerBase > 0 ? l.baseQty * l.costPerBase : l.lineTotal);
+        return { l, value, unitValue: l.qty > 0 ? Math.round(value / l.qty) : 0 };
+      });
+      const amount = Math.max(1, valued.reduce((a, v) => a + v.value, 0));
       const shortOf = new Map((await this.repo.units(tx)).map((u) => [u.id, u.short]));
       const unitName = (u: string) => shortOf.get(u) ?? u;
       const list = q.lines.map((l) => `${l.name}${l.variantName ? ` (${l.variantName})` : ''} — ${qty4(l.qty).toLocaleString('ru-RU')} ${unitName(l.unit)}`).join('; ');
@@ -264,7 +269,7 @@ export class SalesService {
       await this.audit.log(user, { action: 'expense', module: 'Xarajatlar', targetId: expenseId, targetName: OWN_USE_CATEGORY, branchId, requestId, details: `O'zimga olindi: ${amount.toLocaleString('ru-RU')} so'm. ${list}` }, tx);
       await this.notify.enqueueOwnUse(tx, expenseId, branchId, {
         branchName: branch?.name ?? '', userName: user.name, createdAt: new Date().toISOString(), amount,
-        lines: q.lines.map((l) => ({ name: l.name, variantName: l.variantName, qty: l.qty, unit: unitName(l.unit), unitPrice: l.unitPrice, lineTotal: l.lineTotal, cuts: l.cuts ?? null })),
+        lines: valued.map(({ l, value, unitValue }) => ({ name: l.name, variantName: l.variantName, qty: l.qty, unit: unitName(l.unit), unitPrice: unitValue, lineTotal: value, cuts: l.cuts ?? null })),
       });
       return { id: expenseId, amount, lines: q.lines.length };
     });

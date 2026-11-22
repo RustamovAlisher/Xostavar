@@ -103,8 +103,8 @@ describe('telegram savdo boti', () => {
     const msg = lastTo(GROUP);
     expect(msg).toContain("🏠 <b>O'ZIMGA OLINDI</b>");
     expect(msg).toContain('Olingan &lt;tovar&gt;');
-    expect(msg).toContain('3 dona × 20 000 = <b>60 000 so\'m</b>');
-    expect(msg).toContain("Xarajatga yozildi: 60 000 so'm");
+    expect(msg).toContain('3 dona × 12 000 = <b>36 000 so\'m</b>'); // tannarx 12 000 (sotuv narxi 20 000 emas)
+    expect(msg).toContain("Xarajatga yozildi (tannarxda): 36 000 so'm");
     await worker.processOnce();
     expect(countTo(GROUP)).toBe(before + 1); // takror yuborilmaydi
   });
