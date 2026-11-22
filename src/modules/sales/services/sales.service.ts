@@ -15,7 +15,7 @@ import { InventoryService } from '../../inventory/services/inventory.service.js'
 import { SettingsService } from '../../settings/services/settings.service.js';
 import { ShiftsService } from '../../shifts/services/shifts.service.js';
 import type { DebtPaymentDto } from '../../customers/dto/customers.dto.js';
-import type { OwnUseDto, SaleDto, SalesListQuery } from '../dto/sales.dto.js';
+import type { OwnUseDto, OwnUseListQuery, SaleDto, SalesListQuery } from '../dto/sales.dto.js';
 import { toQuoteView, toSaleList, toSaleView, type QuotedLine, type QuoteWarning } from '../mappers/sales.mapper.js';
 import { SalesRepository } from '../repositories/sales.repository.js';
 
@@ -275,6 +275,16 @@ export class SalesService {
     });
   }
 
+  /** «O'zimga olingan» yozuvlar: hammasini ko'rish huquqi bo'lmasa — faqat o'zi olganlari. */
+  async ownUseList(user: AuthUser, branchId: string, q: OwnUseListQuery) {
+    const userId = this.seeAll(user) ? q.userId : user.id;
+    const [items, totals] = await Promise.all([
+      this.repo.ownUseRows(branchId, OWN_USE_CATEGORY, { from: q.from, to: q.to, userId }),
+      this.repo.ownUseTotals(branchId, OWN_USE_CATEGORY, { from: q.from, to: q.to, userId }),
+    ]);
+    return { items, ...totals };
+  }
+
   /** O'zimga olishni bekor qilish: ombor qoldig'i qaytadi, xarajat o'chiriladi. Yozgan xodim yoki administrator. */
   async ownUseVoid(user: AuthUser, branchId: string, id: string, requestId?: string) {
     await runTx(this.db, async (tx) => {
@@ -378,8 +388,12 @@ export class SalesService {
   /** Ro'yxat: kassir faqat o'zinikini, `view_all_sales` hammasini (TZ 9.6). 4 ta so'rov. */
   async list(user: AuthUser, branchId: string, q: SalesListQuery) {
     const cashier = this.seeAll(user) ? q.cashierId : user.id;
-    const [[items, total], summary] = await Promise.all([this.repo.list(branchId, cashier, q), this.repo.summary(branchId, cashier, q)]);
+    const [[items, total], summary, ownUse] = await Promise.all([
+      this.repo.list(branchId, cashier, q), this.repo.summary(branchId, cashier, q),
+      this.repo.ownUseTotals(branchId, OWN_USE_CATEGORY, { from: q.from, to: q.to, userId: cashier }),
+    ]);
     const [lines, pays] = await this.repo.detailsMany(items.map((s) => s.id));
-    return { ...page(toSaleList(items, lines, pays, this.withCost(user)), total, q), summary };
+    // «O'zimga olingan» sotuv summasiga kirmaydi — alohida (Sotuvlar sahifasida «O'zimga» bo'limi)
+    return { ...page(toSaleList(items, lines, pays, this.withCost(user)), total, q), summary: { ...summary, ownUse } };
   }
 }

@@ -2,7 +2,7 @@ import { Body, Controller, Get, HttpCode, Param, ParseUUIDPipe, Post, Query } fr
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { BranchId, BranchScoped, CurrentUser, Perms, Req, requestIdOf, type AuthRequest, type AuthUser } from '../../../common/decorators/auth-context.js';
 import { Idempotent } from '../../../common/interceptors/idempotency.interceptor.js';
-import { OwnUseDto, SaleDto, SalesListQuery, VoidSaleDto } from '../dto/sales.dto.js';
+import { OwnUseDto, OwnUseListQuery, SaleDto, SalesListQuery, VoidSaleDto } from '../dto/sales.dto.js';
 import { SalesService } from '../services/sales.service.js';
 
 @ApiTags('sales')
@@ -47,6 +47,13 @@ export class SalesController {
   @Perms('view_pos')
   list(@CurrentUser() u: AuthUser, @BranchId() branchId: string, @Query() q: SalesListQuery) {
     return this.sales.list(u, branchId, q);
+  }
+
+  /** «O'zimga olingan» yozuvlar ro'yxati (Sotuvlar sahifasidagi «O'zimga» bo'limi). `:id` dan oldin turishi shart. */
+  @Get('own-use')
+  @Perms('view_pos')
+  ownUseList(@CurrentUser() u: AuthUser, @BranchId() branchId: string, @Query() q: OwnUseListQuery) {
+    return this.sales.ownUseList(u, branchId, q);
   }
 
   @Get(':id')

@@ -62,3 +62,10 @@ export class OwnUseDto {
   @IsArray() @ArrayMinSize(1) @ArrayMaxSize(200) @ValidateNested({ each: true }) @Type(() => SaleLineDto) lines: SaleLineDto[];
   @ApiPropertyOptional({ description: "Izoh (ixtiyoriy): masalan «uy uchun»" }) @IsOptional() @IsString() @MaxLength(200) note?: string;
 }
+
+/** GET /sales/own-use: «O'zimga olingan» yozuvlar ro'yxati (davr bo'yicha). */
+export class OwnUseListQuery {
+  @IsOptional() @IsString() @Matches(/^\d{4}-\d{2}-\d{2}$/) from?: string;
+  @IsOptional() @IsString() @Matches(/^\d{4}-\d{2}-\d{2}$/) to?: string;
+  @IsOptional() @IsUUID() userId?: string;
+}

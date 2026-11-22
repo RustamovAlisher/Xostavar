@@ -1,5 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { and, desc, eq, exists, gt, gte, ilike, inArray, lte, or, sql, type SQL } from 'drizzle-orm';
+import { and, desc, eq, exists, gt, gte, ilike, inArray, isNull, lte, or, sql, type SQL } from 'drizzle-orm';
 import { DB, type Db, type DbOrTx } from '../../../db/db.module.js';
 import { branches, expenseCategories, expenses, paymentMethods, saleLines, salePayments, sales, stockMovements, units } from '../../../entities/index.js';
 import type { SalesListQuery } from '../dto/sales.dto.js';
@@ -223,5 +223,36 @@ export class SalesRepository {
   /** Shu xarajat uchun ombordan chiqarilgan qatorlar (qaytarishda teskari yoziladi). */
   ownMovements(tx: DbOrTx, expenseId: string, refType: string) {
     return tx.select().from(stockMovements).where(and(eq(stockMovements.refId, expenseId), eq(stockMovements.refType, refType)));
+  }
+
+  /** «O'zimga olingan» yozuvlar (bekor qilinmaganlar): shu filial, davr (kun) va xodim bo'yicha. */
+  private ownUseWhere(branchId: string, name: string, f: { from?: string; to?: string; userId?: string }) {
+    return and(
+      eq(expenses.branchId, branchId),
+      sql`lower(${expenseCategories.name}) = lower(${name})`,
+      isNull(expenses.voidedAt),
+      f.from ? gte(expenses.date, f.from) : undefined,
+      f.to ? lte(expenses.date, f.to) : undefined,
+      f.userId ? eq(expenses.createdBy, f.userId) : undefined,
+    );
+  }
+
+  ownUseRows(branchId: string, name: string, f: { from?: string; to?: string; userId?: string }) {
+    return this.db
+      .select({ id: expenses.id, date: expenses.date, createdAt: expenses.createdAt, amount: expenses.amount, note: expenses.note, userId: expenses.createdBy, userName: expenses.createdByName })
+      .from(expenses)
+      .innerJoin(expenseCategories, eq(expenseCategories.id, expenses.categoryId))
+      .where(this.ownUseWhere(branchId, name, f))
+      .orderBy(desc(expenses.createdAt))
+      .limit(500);
+  }
+
+  async ownUseTotals(branchId: string, name: string, f: { from?: string; to?: string; userId?: string }) {
+    const [r] = await this.db
+      .select({ count: sql<number>`count(*)::int`, amount: sql<number>`coalesce(sum(${expenses.amount}), 0)::bigint` })
+      .from(expenses)
+      .innerJoin(expenseCategories, eq(expenseCategories.id, expenses.categoryId))
+      .where(this.ownUseWhere(branchId, name, f));
+    return { count: Number(r.count), amount: Number(r.amount) };
   }
 }

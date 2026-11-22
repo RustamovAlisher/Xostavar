@@ -103,6 +103,11 @@ describe('expenses (TZ 7.11, 9.12)', () => {
     expect(list.summary.byCategory.some((x: { name: string }) => x.name === "O'zimga olingan")).toBe(true);
     // sotuv hisobi o'zgarmaydi
     expect((await c.get(`/sales?from=${today}&to=${today}`)).body.summary?.salesSum ?? 0).toBe(salesBefore);
+    // Sotuvlar sahifasidagi «O'zimga» bo'limi: ro'yxat va jami (sotuv summasidan alohida)
+    const ownList = (await c.get(`/sales/own-use?from=${today}&to=${today}`)).body;
+    expect(ownList.items.find((e: { id: string }) => e.id === r.body.id)).toMatchObject({ amount: 18000, userName: 'Alisher Navoiy' });
+    expect(ownList.amount).toBeGreaterThanOrEqual(18000);
+    expect((await c.get(`/sales?from=${today}&to=${today}`)).body.summary.ownUse.amount).toBe(ownList.amount);
 
     // qoldiqdan ko'p — rad; huquqsiz xodim — 403; oddiy yo'l bilan o'chirish/tahrirlash/yozish taqiqlangan
     expect(code(await own(500))).toBe('insufficient_stock');
@@ -114,6 +119,7 @@ describe('expenses (TZ 7.11, 9.12)', () => {
     // qaytarish: qoldiq tiklanadi, xarajat o'chiriladi, takror — rad
     expect((await c.post(`/sales/own-use/${r.body.id}/void`, {})).status).toBeLessThan(300);
     expect(await stock()).toBe(20);
+    expect(((await c.get(`/sales/own-use?from=${today}&to=${today}`)).body.items as { id: string }[]).some((e) => e.id === r.body.id)).toBe(false);
     const after = (await c.get(`/expenses?from=${today}&to=${today}&pageSize=100`)).body;
     expect(after.items.find((e: { id: string }) => e.id === r.body.id)).toBeUndefined();
     expect(code(await c.post(`/sales/own-use/${r.body.id}/void`, {}))).toBe('already_voided');
