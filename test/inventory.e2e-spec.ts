@@ -156,6 +156,17 @@ describe('inventory (TZ 7.4, 8.5, 8.6, 9.5)', () => {
     expect((await s.admin.get(`/products/${p.id}`)).body.costPrice).toBe(777);
   });
 
+  describe('kirimi qaytarilgan mahsulotni o\'chirish', () => {
+    it('kirim qatori o\'chirilgach ombor harakatlari qoladi — mahsulot 409 emas, yumshoq o\'chiriladi', async () => {
+      const p = await makeProduct(s.admin, s, { stock: 0, cost: 0 });
+      const r = await s.admin.post('/stock-in', { lines: [{ productId: p.id, unit: 'piece', qty: 5, costPerUnit: 3000 }] });
+      expect(r.status).toBe(201);
+      expect((await s.admin.del(`/stock-in/lines/${r.body.lines[0].id}?reason=xato`)).status).toBeLessThan(300);
+      expect((await s.admin.del(`/products/${p.id}`)).status).toBeLessThan(300);
+      expect((await s.admin.get(`/products/${p.id}`)).status).toBe(404);
+    });
+  });
+
   describe('kirimni tahrirlash (PATCH /stock-in/lines/:id)', () => {
     it("miqdor va tannarx xatosi tuzatiladi: qoldiq, o'rtacha tannarx, hujjat jami, jurnal yaxlitligi, audit diff", async () => {
       const p = await makeProduct(s.admin, s, { stock: 100, cost: 1000 }); // 100 @ 1000

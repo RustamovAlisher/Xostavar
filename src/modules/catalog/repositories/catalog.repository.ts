@@ -3,7 +3,7 @@ import { and, asc, desc, eq, exists, gt, inArray, isNull, ne, or, sql, type SQL 
 import type { PgColumn } from 'drizzle-orm/pg-core';
 import { DB, type Db, type DbOrTx } from '../../../db/db.module.js';
 import {
-  branchPrices, branches, categories, productBarcodes, productVariants, products, saleLines, stockLevels, stockReceiptLines, unitConversions, units,
+  branchPrices, branches, categories, productBarcodes, productVariants, products, saleLines, stockLevels, stockMovements, stockReceiptLines, unitConversions, units,
 } from '../../../entities/index.js';
 import type { ProductListQuery } from '../dto/catalog.dto.js';
 import { makeDoc, rank } from '../../../common/search.js';
@@ -236,7 +236,10 @@ export class CatalogRepository {
     const [sold] = await tx.select({ id: saleLines.id }).from(saleLines).where(eq(saleLines.productId, productId)).limit(1);
     if (sold) return true;
     const [received] = await tx.select({ id: stockReceiptLines.id }).from(stockReceiptLines).where(eq(stockReceiptLines.productId, productId)).limit(1);
-    return !!received;
+    if (received) return true;
+    // Kirim qatori o'chirilgan bo'lsa ham ombor harakatlari (kirim + qaytarish) qoladi — qattiq o'chirish FK bilan to'xtardi
+    const [moved] = await tx.select({ id: stockMovements.id }).from(stockMovements).where(eq(stockMovements.productId, productId)).limit(1);
+    return !!moved;
   }
 
   /** Yumshoq o'chirish: kodlar bo'shatiladi, tarixiy cheklar nusxalar bilan saqlanadi. */
