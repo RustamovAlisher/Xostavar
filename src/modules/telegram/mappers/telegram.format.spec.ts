@@ -64,9 +64,13 @@ describe('formatlash', () => {
       subtotal: 265_000, total: 265_000, payments: [{ kind: 'cash', label: 'Naqd pul', amount: 265_000 }],
     });
     expect(m).toContain('<b>1.</b> Truba kvadrat — 40×40×2 mm');
-    expect(m).toContain('✂️ Kesib berildi: 6 m × 2 ta, 3 m × 1 ta (jami 15 m)');
-    expect(m).toContain('<b>2.</b> Sement');
-    expect(m.match(/✂️/g)).toHaveLength(1); // kesimsiz mahsulotda yo'q
+    // mahsulot blokida qisqa belgi, tafsilot esa alohida qalin «KESIB BERISH» bo'limida
+    expect(m).toContain('✂️ <i>kesib beriladi — pastda yozilgan</i>');
+    expect(m).toContain('✂️ <b>KESIB BERISH KERAK</b>');
+    expect(m).toContain('<b>1. Truba kvadrat — 40×40×2 mm</b>\n     ▪️ <b>6 m × 2 ta</b>\n     ▪️ <b>3 m × 1 ta</b>\n     jami: <b>15 m</b>');
+    expect(m).not.toContain('Sement</b>\n     ▪️'); // kesimsiz mahsulot bo'limga tushmaydi
+    expect(m.indexOf('KESIB BERISH KERAK')).toBeLessThan(m.indexOf('JAMI:')); // bo'lim jamidan oldin
+    expect(saleMessage(saleBase)).not.toContain('KESIB BERISH');
   });
 
   it('juda ko\'p mahsulot: Telegram 4096 chegarasidan oshmaydi, oxirida «yana N ta»', () => {

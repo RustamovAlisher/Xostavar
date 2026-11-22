@@ -63,10 +63,32 @@ function lineBlock(l: LineView, i: number): string {
     `<b>${i + 1}.</b> ${name}`,
     `     ${qtyStr(l.qty)} ${esc(l.unit)} × ${money(l.unitPrice)} = <b>${money(l.lineTotal)} so'm</b>`,
   ];
-  const cuts = (l.cuts ?? []).filter((c) => c.lengthMeters > 0 && c.quantity > 0);
-  if (cuts.length) {
-    const net = cuts.reduce((a, c) => a + c.lengthMeters * c.quantity, 0);
-    out.push(`     ✂️ Kesib berildi: ${cuts.map((c) => `${qtyStr(c.lengthMeters)} m × ${c.quantity} ta`).join(', ')} (jami ${qtyStr(Math.round(net * 100) / 100)} m)`);
+  if (cutsOf(l).length) out.push('     ✂️ <i>kesib beriladi — pastda yozilgan</i>');
+  return out.join('\n');
+}
+
+const cutsOf = (l: LineView) => (l.cuts ?? []).filter((c) => c.lengthMeters > 0 && c.quantity > 0);
+
+/**
+ * «Kesib berish» bo'limi: temir mahsulotlar (truba, armatura, ugolok …) qaysi o'lchamda va nechta kesilishi — qalin yozuvda,
+ * kesuvchi bir qarashda ko'rsin. Faqat kesimli qatorlar bo'lsa chiqadi.
+ */
+function cutSection(lines: LineView[], limit = 1500): string {
+  const rows = lines.map((l, i) => ({ l, i, cuts: cutsOf(l) })).filter((x) => x.cuts.length);
+  if (!rows.length) return '';
+  const out: string[] = ['✂️ <b>KESIB BERISH KERAK</b>'];
+  let used = out[0].length;
+  for (let k = 0; k < rows.length; k++) {
+    const { l, i, cuts } = rows[k];
+    const net = Math.round(cuts.reduce((a, c) => a + c.lengthMeters * c.quantity, 0) * 100) / 100;
+    const block = [
+      `<b>${i + 1}. ${esc(l.variantName ? `${l.name} — ${l.variantName}` : l.name)}</b>`,
+      ...cuts.map((c) => `     ▪️ <b>${qtyStr(c.lengthMeters)} m × ${c.quantity} ta</b>`),
+      `     jami: <b>${qtyStr(net)} m</b>`,
+    ].join('\n');
+    if (used + block.length > limit && k > 0) { out.push(`<i>… yana ${rows.length - k} ta mahsulot kesiladi (chekka qarang)</i>`); break; }
+    out.push(block);
+    used += block.length;
   }
   return out.join('\n');
 }
@@ -115,7 +137,8 @@ export function saleMessage(s: SaleMsgInput): string {
   if (credit && s.customerDebtAfter != null) foot.push(`⚠️ Mijozning umumiy qarzi: <b>${money(s.customerDebtAfter)} so'm</b>`);
   foot.push('', `<i>Chek № ${esc(s.number)} · ${esc(s.branchName)}</i>`);
 
-  const footStr = foot.join('\n');
+  const cuts = cutSection(s.lines);
+  const footStr = (cuts ? [RULE, cuts, ...foot] : foot).join('\n');
   return `${head}\n${linesBlock(s.lines, MSG_LIMIT - head.length - footStr.length - 4)}\n${footStr}`;
 }
 
