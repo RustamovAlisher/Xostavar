@@ -59,18 +59,21 @@ export class CatalogRepository {
    * Natija: ball bo'yicha tartiblangan mahsulot id'lari (eng ko'pi 500).
    */
   async searchIds(term: string, tx: DbOrTx = this.db): Promise<string[]> {
-    const [prods, codes, vars] = await Promise.all([
-      tx.select({ id: products.id, name: products.name, sku: products.sku }).from(products).where(isNull(products.deletedAt)),
+    const [prods, codes, vars, cats] = await Promise.all([
+      tx.select({ id: products.id, name: products.name, sku: products.sku, categoryId: products.categoryId }).from(products).where(isNull(products.deletedAt)),
       tx.select({ productId: productBarcodes.productId, barcode: productBarcodes.barcode }).from(productBarcodes),
       tx.select({ productId: productVariants.productId, name: productVariants.name, sku: productVariants.sku }).from(productVariants).where(isNull(productVariants.deletedAt)),
+      tx.select({ id: categories.id, name: categories.name }).from(categories),
     ]);
+    const catName = new Map(cats.map((c) => [c.id, c.name]));
     const extra = new Map<string, { names: string[]; codes: string[] }>();
     const slot = (id: string) => { let e = extra.get(id); if (!e) extra.set(id, (e = { names: [], codes: [] })); return e; };
     for (const c of codes) slot(c.productId).codes.push(c.barcode);
     for (const v of vars) { const e = slot(v.productId); e.names.push(v.name); e.codes.push(v.sku); }
     const docs = new Map(prods.map((p) => {
       const e = extra.get(p.id);
-      return [p.id, makeDoc([p.name], [p.sku, ...(e?.names ?? [])], [p.sku, ...(e?.codes ?? [])])] as const;
+      const cat = catName.get(p.categoryId);
+      return [p.id, makeDoc([p.name], [p.sku, ...(e?.names ?? [])], [p.sku, ...(e?.codes ?? [])], cat ? [cat] : [])] as const;
     }));
     return rank(prods, term, (p) => docs.get(p.id)!).slice(0, 500).map((p) => p.id);
   }

@@ -288,3 +288,24 @@ describe('podshipnikli pales (bozorda «pachemnikli pals»)', () => {
     expect(f('pals 28')[0]).toBe(cat[0].n);
   });
 });
+
+describe('qisqa so\'rov va kategoriya (ip → Iplar)', () => {
+  const items = [
+    { n: 'Gipsokarton rubanogi', code: 'GIPSOKARTON-RUBANOK', cat: 'Asbob-uskunalar' },
+    { n: 'LED prozhektor 30 W, IP65', code: 'LED-30', cat: 'LED yoritish' },
+    { n: 'Jilka ip (shilka, leska), o\'ram', code: 'JILKA-IP', cat: 'Iplar' },
+    { n: 'V.O.P polipropilen ip (lenta-shpagat)', code: 'VOP-SHPAGAT', cat: 'Iplar' },
+    { n: 'Bo\'yoq ichki ishlar uchun', code: 'BOYOQ-1', cat: "Bo'yoqlar" },
+  ];
+  const f = (q: string) => rank(items, q, (x) => makeDoc([x.n], [x.code], [x.code], [x.cat])).map((x) => x.code);
+  it('2 harfli so\'rov kod ichidan yolg\'on moslik bermaydi (ip ⊄ gipsokarton)', () => {
+    expect(f('ip')).not.toContain('GIPSOKARTON-RUBANOK');
+  });
+  it('kategoriya nomiga mos so\'rov — shu kategoriya mahsulotlari birinchi', () => {
+    expect(f('ip').slice(0, 2).sort()).toEqual(['JILKA-IP', 'VOP-SHPAGAT']);
+    expect(f('iplar').slice(0, 2).sort()).toEqual(['JILKA-IP', 'VOP-SHPAGAT']);
+  });
+  it('kod boshi bilan qisqa so\'rov hali ham ishlaydi', () => {
+    expect(f('vo')[0]).toBe('VOP-SHPAGAT');
+  });
+});

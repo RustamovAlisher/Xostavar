@@ -93,15 +93,18 @@ export interface SearchDoc {
   extra: string[];
   /** Xom kodlar (kichik harfda): SKU, shtrix-kod — qidiruv matni kod ichida bo'lsa to'g'ridan-to'g'ri topiladi. */
   codes: string[];
+  /** Kategoriya nomi tokenlari: «ip» / «iplar» so'rovida «Iplar» kategoriyasidagi mahsulotlar tepaga chiqadi. */
+  cat: string[];
   nameKey: string;
 }
 
-export function makeDoc(names: string[], extras: string[] = [], codes: string[] = []): SearchDoc {
+export function makeDoc(names: string[], extras: string[] = [], codes: string[] = [], cats: string[] = []): SearchDoc {
   const name = names.flatMap(foldTokens);
   return {
     name,
     extra: extras.flatMap(foldTokens),
     codes: codes.map((c) => c.trim().toLowerCase()).filter(Boolean),
+    cat: cats.flatMap(foldTokens),
     nameKey: name.join(' '),
   };
 }
@@ -340,9 +343,11 @@ export function scoreDoc(doc: SearchDoc, q: ParsedQuery): Scored {
   if (!total) return { score: 0, matched: 0, total };
   if (q.raw.length >= 2 && doc.codes.length) {
     if (doc.codes.includes(q.raw)) return { score: 200, matched: total, total };
-    if (doc.codes.some((c) => c.includes(q.raw))) return { score: 60, matched: total, total };
+    // Kod ichidan moslik — faqat raqamli yoki 4+ belgili so'rovda (aks holda «ip» ⊂ «gipsokarton-…» kabi yolg'on moslik)
+    if (doc.codes.some((c) => c.startsWith(q.raw))) return { score: 60, matched: total, total };
+    if ((q.raw.length >= 4 || /\d/.test(q.raw)) && doc.codes.some((c) => c.includes(q.raw))) return { score: 60, matched: total, total };
   }
-  let sum = 0, matched = 0, lastIdx = -1, ordered = true;
+  let sum = 0, matched = 0, lastIdx = -1, ordered = true, catHit = false;
   for (const alts of q.units) {
     let bestS = 0, bestIdx = -1;
     alts.forEach((alt, k) => {
@@ -351,7 +356,9 @@ export function scoreDoc(doc: SearchDoc, q: ParsedQuery): Scored {
       for (const t of alt) {
         const n = best(t, doc.name, q.memo);
         const e = best(t, doc.extra, q.memo);
-        let s = Math.max(n.s, e.s * 0.7);
+        const c = doc.cat.length ? best(t, doc.cat, q.memo) : { s: 0, i: -1 };
+        if (c.s >= 7.5) catHit = true;
+        let s = Math.max(n.s, e.s * 0.7, c.s * 0.7);
         if (s === 0 && k === 0 && t.length >= 3 && isNum(t) && doc.codes.some((c) => c.includes(t))) s = 4; // kodning raqamli bo'lagi
         if (s === 0) return;
         acc += s;
@@ -373,6 +380,7 @@ export function scoreDoc(doc: SearchDoc, q: ParsedQuery): Scored {
     if (total > 1 && ordered) score += 3;
     if (doc.nameKey === key) score += 4;
     else if (doc.nameKey.startsWith(key)) score += 2;
+    if (catHit) score += 3; // so'rov kategoriya nomiga mos (ip → Iplar): shu kategoriya mahsulotlari birinchi
   }
   score -= Math.min(2, doc.nameKey.length * 0.02);
   return { score: Math.max(score, 0.01), matched, total };
