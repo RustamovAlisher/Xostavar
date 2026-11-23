@@ -131,7 +131,7 @@ export const BUILTIN_SYNONYMS: readonly string[] = [
   'arra, pila, пила, nojovka, ножовка, arracha',
   'disk arra, sirkulyarka, циркулярка, циркулярная пила, sirkulyar',
   'qaychi, nojnitsy, ножницы, kaychi',
-  'sekator, секатор, bog\' qaychisi',
+  'sekator, секатор, bog\' qaychisi, tok qaychi, tok qaychisi',
   'pichoq, noj, nozh, нож, kanselyarskiy pichoq, utility knife',
   'lezviye, lezviya, лезвие, лезвия, tig\'',
   'shpatel, шпатель, kurakcha, malyar shpateli',
@@ -285,7 +285,7 @@ const isNum = (t: string) => /\d/.test(t);
 const collapse = (s: string) => (/^[a-zA-Z]+$/.test(s) ? s.replace(/([a-zA-Z])\1+/g, '$1') : s);
 
 /** Bitta so'z bitta token bilan qanchalik mos (0 — mos emas). Qo'sh harflar (arra/ara) va unlilar (o/a, e/i) hisobga olinadi. */
-function tokenScore(t: string, p: string): number {
+export function tokenScore(t: string, p: string): number {
   let s = rawScore(t, p);
   if (t.length < 3) return s;
   const c = collapse(t), cp = collapse(p);
