@@ -3,7 +3,7 @@ import { DB, type Db, type DbOrTx } from '../../../db/db.module.js';
 import { runTx } from '../../../db/tx.js';
 import type { AuthUser } from '../../../common/decorators/auth-context.js';
 import { conflict, notFound, unprocessable } from '../../../common/errors/app-error.js';
-import { todayISO } from '../../../common/utils/numbers.js';
+import { qty4, todayISO } from '../../../common/utils/numbers.js';
 import { AuditService } from '../../audit/services/audit.service.js';
 import type { SupplierDto, SupplierListQuery, SupplierManualDebtDto, SupplierPaymentDto, SupplierSetDebtDto } from '../dto/suppliers.dto.js';
 import { SuppliersRepository, type SupplierRow } from '../repositories/suppliers.repository.js';
@@ -48,6 +48,7 @@ export class SuppliersService {
       this.repo.receipts(id), this.repo.debtReceipts(id), this.repo.manualDebts(id), this.repo.creditsTotal(id), this.repo.ledger(id),
     ]);
     const lines = await this.repo.receiptLinesOf(receipts.map((r) => r.r.id));
+    const sold = await this.soldByLine(lines);
     const linesOf = new Map<string, typeof lines>();
     for (const l of lines) linesOf.set(l.receiptId, [...(linesOf.get(l.receiptId) ?? []), l]);
     const items: DebtItem[] = [
@@ -65,12 +66,36 @@ export class SuppliersService {
           total, paidAtReceipt: r.paidAmount, debt: r.debtAmount, left: a?.left ?? 0,
           /** false — eski kirim: qarz hisobi yuritilmagan (to'liq to'langan deb olinadi). */
           tracked: r.paidAmount != null,
-          lines: (linesOf.get(r.id) ?? []).map((l) => ({ id: l.id, productId: l.productId, productName: l.productName, sku: l.sku, unit: l.unit, qty: Number(l.qty), costPerUnit: Number(l.costPerUnit), totalCost: Number(l.totalCost) })),
+          lines: (linesOf.get(r.id) ?? []).map((l) => {
+            const qty = Number(l.qty);
+            const base = Number(l.qtyBase);
+            const soldQty = base > 0 ? qty4(Math.min(qty, (sold.get(l.id) ?? 0) / (base / qty))) : 0;
+            return { id: l.id, productId: l.productId, variantId: l.variantId, productName: l.productName, sku: l.sku, unit: l.unit, qty, sold: soldQty, left: qty4(qty - soldQty), costPerUnit: Number(l.costPerUnit), totalCost: Number(l.totalCost) };
+          }),
         };
       }),
       oldDebts: manual.map((m) => ({ id: m.id, date: m.date, amount: m.amount, note: m.note, left: alloc.get(`a:${m.id}`)?.left ?? 0 })),
       ledger: ledger.map(({ l, method }) => ({ id: l.id, type: l.type, amount: l.amount, balanceAfter: l.balanceAfter, date: l.date, method, note: l.note, refType: l.refType, refId: l.refId, createdAt: l.createdAt.toISOString() })),
     };
+  }
+
+  /**
+   * Har kirim qatorining qancha qismi sotilgan (asosiy birlikda): shu mahsulot (filial, variant) bo'yicha jami chiqim
+   * kirimlarga eng eskisidan boshlab taqsimlanadi (FIFO). Kirim hujjatisiz qoldiq (qo'lda tuzatish) hisobga olinmaydi — taxminiy.
+   */
+  private async soldByLine(lines: { id: string; productId: string }[]): Promise<Map<string, number>> {
+    const productIds = [...new Set(lines.map((l) => l.productId))];
+    const [all, outs] = await Promise.all([this.repo.flowLines(productIds), this.repo.outflows(productIds)]);
+    const key = (x: { branchId: string; productId: string; variantId: string | null }) => `${x.branchId}|${x.productId}|${x.variantId ?? ''}`;
+    const pool = new Map(outs.map((o) => [key(o), Math.max(0, Number(o.out))]));
+    const sold = new Map<string, number>();
+    for (const l of all) {
+      const k = key(l);
+      const take = Math.min(pool.get(k) ?? 0, Number(l.qtyBase));
+      pool.set(k, (pool.get(k) ?? 0) - take);
+      sold.set(l.id, take);
+    }
+    return sold;
   }
 
   /* ───────── Yetkazib beruvchi yozuvi ───────── */

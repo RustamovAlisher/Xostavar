@@ -189,6 +189,15 @@ export class InventoryRepository {
       .then((r) => r[0] ?? null);
   }
 
+  /** Kirim hujjati qatori qulflanadi (to'lov holatini o'zgartirish). */
+  lockReceipt(tx: DbOrTx, id: string) {
+    return tx.select().from(stockReceipts).where(eq(stockReceipts.id, id)).for('update').then((r) => r[0] ?? null);
+  }
+
+  setReceiptPaid(tx: DbOrTx, id: string, paidAmount: number) {
+    return tx.update(stockReceipts).set({ paidAmount }).where(eq(stockReceipts.id, id));
+  }
+
   /** Hujjatni o'chiradi (qatorlari `cascade` bilan ketadi). */
   deleteReceipt(tx: DbOrTx, id: string) {
     return tx.delete(stockReceipts).where(eq(stockReceipts.id, id));

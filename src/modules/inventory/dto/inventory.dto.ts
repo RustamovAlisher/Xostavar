@@ -32,6 +32,11 @@ export class StockInLineEditDto {
   @IsOptional() @IsString() @MaxLength(300) reason?: string;
 }
 
+/** Kirimning to'lov holati (PUT /stock-in/:id/payment): kirim paytida qancha to'langan; qolgani yetkazib beruvchiga qarz. */
+export class ReceiptPaymentDto {
+  @ApiPropertyOptional({ description: "Kirim paytida to'langan summa, so'm (0 — butunlay qarzga olingan). Jami summadan katta bo'lmasin." }) @IsInt() @Min(0) paidAmount: number;
+}
+
 export class StockAdjustDto {
   @IsUUID() productId: string;
   @IsOptional() @IsUUID() variantId?: string;

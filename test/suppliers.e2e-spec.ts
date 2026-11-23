@@ -1,5 +1,5 @@
 import { INestApplication } from '@nestjs/common';
-import { code, createApp, makeProduct, rawDb, seeded, today, uniq, type Seeded } from './helpers.js';
+import { code, createApp, ensureShift, makeProduct, rawDb, seeded, today, uniq, type Seeded } from './helpers.js';
 
 describe('suppliers: yetkazib beruvchilarga qarz', () => {
   let app: INestApplication;
@@ -153,6 +153,55 @@ describe('suppliers: yetkazib beruvchilarga qarz', () => {
     const bad = await db.query(`select s.name from suppliers s where s.total_debt <> coalesce((select sum(amount) from supplier_ledger l where l.supplier_id = s.id), 0)`);
     await db.end();
     expect(bad.rows).toEqual([]);
+  });
+
+  it("kirimdan nechtasi sotilgan / nechtasi qolgan: sotuv eng eski kirimdan yopiladi, storno qaytaradi", async () => {
+    const pid = (await makeProduct(s.admin, s, { name: uniq('Qopqoq ') })).id;
+    const name = uniq('Rauf ');
+    const rc = (qty: number, date: string) => s.admin.post('/stock-in', { supplierName: name, paidAmount: 0, date, lines: [{ productId: pid, unit: 'piece', qty, costPerUnit: 1000 }] });
+    await rc(14, '2026-02-01');
+    await rc(6, '2026-03-01');
+    const id = await supplierId(name);
+    const lines = async () => (await profile(id)).purchases.map((p: { date: string; lines: { sold: number; left: number; qty: number }[] }) => [p.date, p.lines[0].qty, p.lines[0].sold, p.lines[0].left]);
+    expect(await lines()).toEqual([['2026-03-01', 6, 0, 6], ['2026-02-01', 14, 0, 14]]);
+
+    const close = await ensureShift(s.admin, 0);
+    const sale = await s.admin.post('/sales', { lines: [{ productId: pid, unit: 'piece', qty: 16 }], payments: [{ methodId: s.methods.cash, amount: 160000 }] });
+    expect(sale.status).toBe(201);
+    expect(await lines()).toEqual([['2026-03-01', 6, 2, 4], ['2026-02-01', 14, 14, 0]]); // 16 ta: avval 14 (eski), keyin 2
+    expect([200, 201]).toContain((await s.admin.post(`/sales/${sale.body.id}/void`, { reason: 'test' })).status);
+    expect(await lines()).toEqual([['2026-03-01', 6, 0, 6], ['2026-02-01', 14, 0, 14]]);
+    await close();
+  });
+
+  it("kirim to'lov holati: qarz hisobi yuritilmagan kirimni qarzga o'tkazish; summa jamidan katta bo'lmaydi; yetkazib beruvchisiz bo'lmaydi", async () => {
+    const name = uniq('Eski kirim ');
+    const rc = await receive({ supplierName: name }); // paidAmount yo'q — hisobsiz
+    const id = await supplierId(name);
+    expect(rc.body.paidAmount).toBeNull();
+    expect((await profile(id)).supplier.totalDebt).toBe(0);
+
+    expect(code(await s.admin.put(`/stock-in/${rc.body.id}/payment`, { paidAmount: 10001 }))).toBe('validation_failed');
+    const r = await s.admin.put(`/stock-in/${rc.body.id}/payment`, { paidAmount: 2500 });
+    expect(r.status).toBe(200);
+    expect(r.body).toMatchObject({ paidAmount: 2500, debtAmount: 7500 });
+    expect((await profile(id)).supplier.totalDebt).toBe(7500);
+    expect((await s.admin.put(`/stock-in/${rc.body.id}/payment`, { paidAmount: 10000 })).status).toBe(200);
+    expect((await profile(id)).supplier.totalDebt).toBe(0);
+
+    const none = await receive({});
+    expect(code(await s.admin.put(`/stock-in/${none.body.id}/payment`, { paidAmount: 0 }))).toBe('validation_failed');
+    expect((await s.kassir.put(`/stock-in/${rc.body.id}/payment`, { paidAmount: 0 })).status).toBe(403);
+  });
+
+  it("narxi kiritilmagan kirim qarzga olinsa (jami 0) keyin tannarx kiritilganda qarz paydo bo'ladi", async () => {
+    const name = uniq('Narxsiz ');
+    const rc = await s.admin.post('/stock-in', { supplierName: name, paidAmount: 0, lines: [{ productId, unit: 'piece', qty: 14 }] });
+    expect(rc.status).toBe(201);
+    const id = await supplierId(name);
+    expect((await profile(id)).supplier.totalDebt).toBe(0);
+    expect((await s.admin.patch(`/stock-in/lines/${rc.body.lines[0].id}`, { costPerUnit: 500 })).status).toBe(200);
+    expect((await profile(id)).supplier.totalDebt).toBe(7000);
   });
 
   it("huquqlar: kassir va omborchi ko'ra olmaydi; buxgalter ko'radi va to'lov beradi; sozlamalardan qarzli yetkazib beruvchini o'chirib bo'lmaydi", async () => {

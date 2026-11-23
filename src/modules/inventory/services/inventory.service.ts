@@ -8,7 +8,7 @@ import { page } from '../../../common/utils/pagination.js';
 import { averageCost, editAverageCost, factorOf } from '../../../common/utils/pricing.js';
 import { AuditService } from '../../audit/services/audit.service.js';
 import { SuppliersService } from '../../suppliers/services/suppliers.service.js';
-import type { StockAdjustDto, StockInDto, StockInLineEditDto, StockInListQuery, StockLevelPatchDto } from '../dto/inventory.dto.js';
+import type { ReceiptPaymentDto, StockAdjustDto, StockInDto, StockInLineEditDto, StockInListQuery, StockLevelPatchDto } from '../dto/inventory.dto.js';
 import { displayName, levelKey, toLevelView, toLevelsAcrossBranches, toLockedLevel, toProductHistory, toReceiptList, toReceiptView, toTargets, type LockedLevel, type Target } from '../mappers/inventory.mapper.js';
 import { InventoryRepository, type LevelKey, type MovementType } from '../repositories/inventory.repository.js';
 
@@ -268,6 +268,28 @@ export class InventoryService {
       }, tx);
     });
     return { ok: true };
+  }
+
+  /**
+   * Kirimning to'lov holatini belgilash: kirim paytida qancha to'langan (qolgani yetkazib beruvchiga qarz).
+   * Eski (qarz hisobi yuritilmagan) kirimni qarzga o'tkazish ham shu yerdan: yetkazib beruvchisi bo'lishi shart.
+   */
+  async setReceiptPayment(user: AuthUser, branchId: string, receiptId: string, dto: ReceiptPaymentDto, requestId?: string) {
+    await runTx(this.db, async (tx) => {
+      const r = await this.repo.lockReceipt(tx, receiptId);
+      if (!r) throw notFound('Kirim hujjati');
+      if (r.branchId !== branchId) throw forbidden("Boshqa filial kirimini o'zgartirib bo'lmaydi", 'branch_forbidden');
+      if (!r.supplierId) throw unprocessable('validation_failed', "Avval yetkazib beruvchini tanlang (kirim qatorini tahrirlab)");
+      const total = Math.round(Number(r.totalCost));
+      if (dto.paidAmount > total) throw unprocessable('validation_failed', `To'langan summa kirim jamidan katta (${total.toLocaleString('ru-RU')} so'm)`);
+      await this.repo.setReceiptPaid(tx, r.id, dto.paidAmount);
+      await this.suppliers.syncReceiptDebt(tx, user.id, r.id);
+      await this.audit.log(user, {
+        action: 'edit', module: 'Yetkazib beruvchilar', targetId: r.supplierId, targetName: r.supplierName ?? 'Yetkazib beruvchi', branchId, requestId,
+        details: `Kirim №${r.number}: kirimda to'langan ${dto.paidAmount.toLocaleString('ru-RU')} so'm (jami ${total.toLocaleString('ru-RU')}), qarz ${Math.max(0, total - dto.paidAmount).toLocaleString('ru-RU')} so'm`,
+      }, tx);
+    });
+    return this.getReceipt(receiptId);
   }
 
   async getReceipt(id: string, user?: AuthUser) {

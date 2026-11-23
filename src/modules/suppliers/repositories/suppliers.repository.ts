@@ -1,7 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
 import { and, asc, desc, eq, gt, inArray, like, or, sql } from 'drizzle-orm';
 import { DB, type Db, type DbOrTx } from '../../../db/db.module.js';
-import { branches, paymentMethods, stockReceiptLines, stockReceipts, supplierLedger, suppliers } from '../../../entities/index.js';
+import { branches, paymentMethods, stockMovements, stockReceiptLines, stockReceipts, supplierLedger, suppliers } from '../../../entities/index.js';
 import { textQuery } from '../../../common/search-sql.js';
 import type { SupplierListQuery } from '../dto/suppliers.dto.js';
 
@@ -120,6 +120,27 @@ export class SuppliersRepository {
 
   receiptLinesOf(receiptIds: string[], tx: DbOrTx = this.db): Promise<ReceiptLineRow[]> {
     return receiptIds.length ? tx.select().from(stockReceiptLines).where(inArray(stockReceiptLines.receiptId, receiptIds)) : Promise.resolve([]);
+  }
+
+  /** Berilgan mahsulotlarning barcha kirim qatorlari (FIFO tartibda: sana, raqam) — qaysi kirimdan qancha sotilganini hisoblash uchun. */
+  async flowLines(productIds: string[], tx: DbOrTx = this.db) {
+    if (!productIds.length) return [];
+    return tx
+      .select({ id: stockReceiptLines.id, branchId: stockReceipts.branchId, productId: stockReceiptLines.productId, variantId: stockReceiptLines.variantId, qtyBase: stockReceiptLines.qtyBase })
+      .from(stockReceiptLines)
+      .innerJoin(stockReceipts, eq(stockReceipts.id, stockReceiptLines.receiptId))
+      .where(inArray(stockReceiptLines.productId, productIds))
+      .orderBy(asc(stockReceipts.date), asc(stockReceipts.number), asc(stockReceiptLines.id));
+  }
+
+  /** Mahsulot (filial, variant bo'yicha) ombordan chiqqan sof miqdor, asosiy birlikda: sotuv (storno hisobga olingan), hisobdan chiqarish, ko'chirish. */
+  async outflows(productIds: string[], tx: DbOrTx = this.db) {
+    if (!productIds.length) return [];
+    return tx
+      .select({ branchId: stockMovements.branchId, productId: stockMovements.productId, variantId: stockMovements.variantId, out: sql<number>`coalesce(-sum(${stockMovements.qtyBase}), 0)::float8` })
+      .from(stockMovements)
+      .where(and(inArray(stockMovements.productId, productIds), inArray(stockMovements.type, ['sale', 'sale_void', 'write_off', 'transfer_out'])))
+      .groupBy(stockMovements.branchId, stockMovements.productId, stockMovements.variantId);
   }
 
   lockReceipt(tx: DbOrTx, id: string) {

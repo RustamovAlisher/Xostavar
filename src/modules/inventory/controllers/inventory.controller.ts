@@ -1,9 +1,9 @@
-import { Body, Controller, Delete, Get, Param, ParseUUIDPipe, Patch, Post, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, Param, ParseUUIDPipe, Patch, Post, Put, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { BranchId, BranchScoped, CurrentUser, Perms, Req, requestIdOf, type AuthRequest, type AuthUser } from '../../../common/decorators/auth-context.js';
 import { Idempotent } from '../../../common/interceptors/idempotency.interceptor.js';
 import { CatalogService } from '../../catalog/services/catalog.service.js';
-import { MovementsQuery, StockAdjustDto, StockInDto, StockInLineEditDto, StockInListQuery, StockLevelPatchDto } from '../dto/inventory.dto.js';
+import { MovementsQuery, ReceiptPaymentDto, StockAdjustDto, StockInDto, StockInLineEditDto, StockInListQuery, StockLevelPatchDto } from '../dto/inventory.dto.js';
 import { InventoryService } from '../services/inventory.service.js';
 import { ProductListQuery } from '../../catalog/dto/catalog.dto.js';
 
@@ -45,6 +45,13 @@ export class InventoryController {
   }
 
   /** Kirim qatorini tahrirlash: miqdor, birlik, tannarx, hujjat ma'lumotlari (qoldiq va o'rtacha tannarx qayta hisoblanadi). */
+  /** Kirimning to'lov holati: kirimda qancha to'langan, qolgani yetkazib beruvchiga qarz. */
+  @Put('stock-in/:id/payment')
+  @Perms('stock_in')
+  receiptPayment(@CurrentUser() u: AuthUser, @BranchId() branchId: string, @Req() req: AuthRequest, @Param('id', ParseUUIDPipe) id: string, @Body() dto: ReceiptPaymentDto) {
+    return this.inventory.setReceiptPayment(u, branchId, id, dto, requestIdOf(req));
+  }
+
   @Patch('stock-in/lines/:id')
   @Perms('stock_in')
   editLine(@CurrentUser() u: AuthUser, @BranchId() branchId: string, @Req() req: AuthRequest, @Param('id', ParseUUIDPipe) id: string, @Body() dto: StockInLineEditDto) {
