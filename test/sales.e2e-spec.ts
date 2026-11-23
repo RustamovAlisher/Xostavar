@@ -266,6 +266,49 @@ describe('sales (TZ 8, 9.6, 20)', () => {
       // Jamlardan chiqadi
       expect((await c.get('/shifts/current')).body.totals.voided).toBeGreaterThanOrEqual(1);
     });
+    it('chekni tahrirlash (replace): eski chek bekor + yangisi, bitta tranzaksiya; qoldiq va qarz to\'g\'ri; huquq; takror; to\'langan qarz bloklaydi', async () => {
+      const cu = (await c.post('/customers', { name: 'Tahrir', phone: phone(), creditLimit: 2_000_000 }, { idem: false })).body;
+      const stock0 = (await c.get(`/products/${cement.id}`)).body.stock;
+      // 1) oddiy naqd chek: 2 qop → tahrir: 3 qop
+      const sale = await c.post('/sales', { lines: [{ productId: cement.id, unit: 'bag', qty: 2 }], payments: cash(130000) });
+      expect(sale.status).toBe(201);
+      const clientId = randomUUID();
+      const rep = await c.post(`/sales/${sale.body.id}/replace`, { clientId, lines: [{ productId: cement.id, unit: 'bag', qty: 3 }], payments: cash(195000) });
+      expect(rep.status).toBe(201);
+      expect(rep.body).toMatchObject({ status: 'completed', totalAmount: 195000 });
+      expect(rep.body.id).not.toBe(sale.body.id);
+      const old = (await c.get(`/sales/${sale.body.id}`)).body;
+      expect(old).toMatchObject({ status: 'voided' });
+      expect(old.voidReason).toContain(rep.body.number);
+      expect((await c.get(`/products/${cement.id}`)).body.stock).toBe(stock0 - 3); // 2 qaytdi, 3 ketdi
+      // takror yuborilgan so'rov (clientId bir xil) — yangisini qaytaradi, ikkinchi marta almashtirmaydi
+      const again = await c.post(`/sales/${sale.body.id}/replace`, { clientId, lines: [{ productId: cement.id, unit: 'bag', qty: 3 }], payments: cash(195000) });
+      expect(again.body.id).toBe(rep.body.id);
+      expect((await c.get(`/products/${cement.id}`)).body.stock).toBe(stock0 - 3);
+      // bekor qilingan chekni tahrirlab bo'lmaydi
+      expect(code(await c.post(`/sales/${sale.body.id}/replace`, { lines: [{ productId: cement.id, unit: 'bag', qty: 1 }], payments: cash(65000) }))).toBe('already_voided');
+      // qoldiq yetmasa — hech narsa o'zgarmaydi (eski chek tirik qoladi)
+      const live = await c.post('/sales', { lines: [{ productId: cement.id, unit: 'bag', qty: 1 }], payments: cash(65000) });
+      const bad = await c.post(`/sales/${live.body.id}/replace`, { lines: [{ productId: cement.id, unit: 'bag', qty: 99999 }], payments: cash(65000) });
+      expect(code(bad)).toBe('insufficient_stock');
+      expect((await c.get(`/sales/${live.body.id}`)).body.status).toBe('completed');
+      // huquq: kassirda void_sale yo'q
+      const kassir = await as(app, 'kassir');
+      expect((await kassir.at(branch).post(`/sales/${live.body.id}/replace`, { lines: [{ productId: cement.id, unit: 'bag', qty: 1 }], payments: cash(65000) })).status).toBe(403);
+      // 2) nasiya chek: 1 qop → 2 qop; mijoz qarzi yangi chekka ko'chadi
+      const debt0 = (await c.get(`/customers/${cu.id}`)).body.totalDebtUZS;
+      const dsale = await c.post('/sales', { lines: [{ productId: cement.id, unit: 'bag', qty: 1 }], customerId: cu.id, onCredit: true });
+      expect((await c.get(`/customers/${cu.id}`)).body.totalDebtUZS).toBe(debt0 + 65000);
+      const drep = await c.post(`/sales/${dsale.body.id}/replace`, { lines: [{ productId: cement.id, unit: 'bag', qty: 2 }], customerId: cu.id, onCredit: true });
+      expect(drep.status).toBe(201);
+      expect(drep.body).toMatchObject({ remainingDebt: 130000, customerName: 'Tahrir' });
+      expect((await c.get(`/customers/${cu.id}`)).body.totalDebtUZS).toBe(debt0 + 130000);
+      // 3) mijoz qarzning bir qismini to'lagan bo'lsa — almashtirib bo'lmaydi
+      expect((await c.post(`/customers/${cu.id}/payments`, { amount: 20000, methodId: s.methods.cash })).status).toBe(201);
+      const blocked = await c.post(`/sales/${drep.body.id}/replace`, { lines: [{ productId: cement.id, unit: 'bag', qty: 1 }], customerId: cu.id, onCredit: true });
+      expect(code(blocked)).toBe('validation_failed');
+      expect((await c.get(`/sales/${drep.body.id}`)).body.status).toBe('completed');
+    });
     it('storno chekka holati: mijoz nasiya chekidan keyin qisman to\'lagan — qarz 0 gacha, ortig\'i auditda "naqd qaytariladi"', async () => {
       const cu = (await c.post('/customers', { name: 'Chekka', phone: phone(), creditLimit: 1_000_000 }, { idem: false })).body;
       const sale = await c.post('/sales', { lines: [{ productId: cement.id, unit: 'bag', qty: 2 }], customerId: cu.id, onCredit: true });

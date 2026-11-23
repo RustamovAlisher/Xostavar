@@ -40,6 +40,9 @@ export class SaleDto {
   @ApiPropertyOptional({ description: "Yetmagan summa mijoz nasiyasiga yoziladi (customerId majburiy)" }) @IsOptional() @IsBoolean() onCredit?: boolean;
 }
 
+/** POST /sales/:id/replace — chekni tahrirlash: o'rniga yoziladigan yangi chek (SaleDto bilan bir xil). */
+export class ReplaceSaleDto extends SaleDto {}
+
 export class VoidSaleDto {
   @IsString() @MinLength(1) @MaxLength(300) reason: string;
 }

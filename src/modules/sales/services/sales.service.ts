@@ -147,7 +147,12 @@ export class SalesService {
   }
 
   private createTx(user: AuthUser, branchId: string, dto: SaleDto, requestId?: string) {
-    return runTx(this.db, async (tx) => {
+    return runTx(this.db, (tx) => this.createIn(tx, user, branchId, dto, requestId));
+  }
+
+  /** Sotuvni berilgan tranzaksiya ichida yozadi (oddiy sotuv va «chekni almashtirish» ikkalasi shuni ishlatadi). */
+  private async createIn(tx: DbOrTx, user: AuthUser, branchId: string, dto: SaleDto, requestId?: string): Promise<string> {
+    {
       // Qulf tartibi hamma joyda bir xil: avval filial qatori (chek raqami), keyin qoldiq qatorlari — deadlock bo'lmasin
       const b = await this.repo.lockBranch(tx, branchId);
       const shiftId = await this.shifts.requireForSale(tx, user, branchId);
@@ -218,7 +223,7 @@ export class SalesService {
       }, tx);
       await this.notify.enqueue(tx, 'sale', saleId, branchId);
       return saleId;
-    });
+    }
   }
 
   private async nextNumber(tx: DbOrTx, branchId: string, code: string) {
@@ -340,7 +345,13 @@ export class SalesService {
   /* ───────── Storno (TZ 7.9) ───────── */
 
   async void(user: AuthUser, branchId: string, id: string, reason: string, requestId?: string) {
-    await runTx(this.db, async (tx) => {
+    await runTx(this.db, (tx) => this.voidIn(tx, user, branchId, id, reason, requestId));
+    return this.get(user, id);
+  }
+
+  /** Chekni berilgan tranzaksiya ichida bekor qiladi: qoldiq va qarz qaytadi, smena jamlari yangilanadi. */
+  private async voidIn(tx: DbOrTx, user: AuthUser, branchId: string, id: string, reason: string, requestId?: string): Promise<void> {
+    {
       // Qulf tartibi sotuv bilan bir xil: filial → chek → qoldiq qatorlari
       await this.repo.lockBranch(tx, branchId);
       const s = await this.repo.lockById(tx, id);
@@ -367,8 +378,41 @@ export class SalesService {
       await this.shifts.refreezeIfClosed(tx, s.shiftId);
       await this.audit.log(user, { action: 'sale_void', module: 'Kassa', targetId: id, targetName: `Chek ${s.number} · ${s.customerName}`, branchId, requestId, details: `Bekor qilindi: ${s.totalAmount.toLocaleString('ru-RU')} so'm${debtNote}. Sabab: ${reason.trim()}` }, tx);
       await this.notify.enqueue(tx, 'void', id, branchId);
+    }
+  }
+
+  /**
+   * Chekni TAHRIRLASH (kassada qayta ochib o'zgartirilgan): eski chek bekor qilinadi, o'rniga yangisi yoziladi —
+   * hammasi BITTA tranzaksiyada (qoldiq, qarz, smena jamlari to'g'ri; birortasi xato bersa hech narsa o'zgarmaydi).
+   * Yangi chek hozirgi ochiq smenaga yoziladi, eski chek «tahrirlandi → yangi raqam» izohi bilan bekor bo'ladi.
+   * Mijoz eski chek bo'yicha qarzning bir qismini allaqachon to'lagan bo'lsa — almashtirib bo'lmaydi (qarz taqsimoti buziladi).
+   */
+  async replace(user: AuthUser, branchId: string, id: string, dto: SaleDto, requestId?: string) {
+    if (dto.clientId) {
+      const dup = await this.repo.findIdByClientId(dto.clientId);
+      if (dup) return this.get(user, dup); // takror yuborilgan so'rov: almashtirish allaqachon bajarilgan
+    }
+    const newId = await runTx(this.db, async (tx) => {
+      await this.repo.lockBranch(tx, branchId);
+      const old = await this.repo.lockById(tx, id);
+      if (!old) throw notFound('Chek');
+      if (old.branchId !== branchId) throw forbidden("Boshqa filial chekini o'zgartira olmaysiz", 'branch_forbidden');
+      if (old.type !== 'sale') throw unprocessable('validation_failed', 'Faqat sotuv cheki tahrirlanadi');
+      if (old.status === 'voided') throw conflict('already_voided', 'Bu chek bekor qilingan — tahrirlab bo\'lmaydi');
+      if (old.remainingDebt > 0 && old.customerId) {
+        const { left } = await this.customers.saleDebtLeft(tx, old.customerId, id);
+        if (left < old.remainingDebt) {
+          throw unprocessable('validation_failed', `Mijoz bu chek bo'yicha ${(old.remainingDebt - left).toLocaleString('ru-RU')} so'm qarzni allaqachon to'lagan — chekni to'liq tahrirlab bo'lmaydi. Mahsulotni «Mijoz kartasi»dan tahrirlang yoki chekni bekor qiling`);
+        }
+      }
+      await this.voidIn(tx, user, branchId, id, `Tahrirlandi`, requestId);
+      const newSale = await this.createIn(tx, user, branchId, dto, requestId);
+      const created = await this.repo.lockById(tx, newSale);
+      await this.repo.updateSale(tx, id, { voidReason: `Tahrirlandi → ${created?.number ?? 'yangi chek'}` });
+      await this.audit.log(user, { action: 'edit', module: 'Kassa', targetId: newSale, targetName: `Chek ${old.number} → ${created?.number ?? ''}`, branchId, requestId, details: `Chek tahrirlandi: ${old.number} (${old.totalAmount.toLocaleString('ru-RU')} so'm) bekor qilinib, ${created?.number ?? 'yangi chek'} (${(created?.totalAmount ?? 0).toLocaleString('ru-RU')} so'm) yozildi` }, tx);
+      return newSale;
     });
-    return this.get(user, id);
+    return this.get(user, newId);
   }
 
   /**
