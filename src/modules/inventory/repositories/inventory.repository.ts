@@ -1,5 +1,5 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { and, asc, desc, eq, gte, inArray, isNull, lte, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gte, inArray, isNull, lte, or, sql } from 'drizzle-orm';
 import { DB, type Db, type DbOrTx } from '../../../db/db.module.js';
 import { auditLogs, branches, productVariants, products, stockLevels, stockMovements, stockReceiptLines, stockReceipts, suppliers, unitConversions, units } from '../../../entities/index.js';
 import type { StockInListQuery } from '../dto/inventory.dto.js';
@@ -35,6 +35,44 @@ export class InventoryRepository {
   /** Bitta qoldiq qatorini `FOR UPDATE` bilan oladi; yo'q bo'lsa null. */
   lockLevel(tx: DbOrTx, branchId: string, k: LevelKey): Promise<LockedLevelRow | null> {
     return tx.select({ id: stockLevels.id, stock: stockLevels.stock, costPrice: stockLevels.costPrice, minStock: stockLevels.minStock }).from(stockLevels).where(this.levelWhere(branchId, k)).for('update').then((r) => r[0] ?? null);
+  }
+
+  /**
+   * Bir nechta qoldiq qatorini BITTA so'rov bilan `FOR UPDATE` qulflaydi (har mahsulot uchun alohida so'rov — N+1 edi).
+   * Qulflar `id` tartibida olinadi — hamma tranzaksiyalarda bir xil tartib, deadlock bo'lmaydi.
+   */
+  lockLevelsMany(tx: DbOrTx, branchId: string, keys: LevelKey[]): Promise<(LockedLevelRow & { productId: string; variantId: string | null })[]> {
+    if (!keys.length) return Promise.resolve([]);
+    return tx
+      .select({ id: stockLevels.id, productId: stockLevels.productId, variantId: stockLevels.variantId, stock: stockLevels.stock, costPrice: stockLevels.costPrice, minStock: stockLevels.minStock })
+      .from(stockLevels)
+      .where(or(...keys.map((k) => this.levelWhere(branchId, k))))
+      .orderBy(asc(stockLevels.id))
+      .for('update');
+  }
+
+  /** Yo'q qoldiq qatorlarini bitta INSERT bilan 0 qilib yaratadi (parallel yaratilgan bo'lsa — jim o'tadi). */
+  insertLevelsIfMissing(tx: DbOrTx, branchId: string, keys: LevelKey[]) {
+    if (!keys.length) return Promise.resolve();
+    return tx.insert(stockLevels).values(keys.map((k) => ({ branchId, productId: k.productId, variantId: k.variantId, stock: 0 }))).onConflictDoNothing().then(() => undefined);
+  }
+
+  /** Bir nechta qatorni bitta UPDATE bilan: stock = round(stock + delta, 4), version + 1. Qaytaradi: id → yangi qoldiq. */
+  async incrementStocks(tx: DbOrTx, items: { id: string; delta: number }[]): Promise<Map<string, number>> {
+    if (!items.length) return new Map();
+    const values = sql.join(items.map((i) => sql`(${i.id}::uuid, ${i.delta}::numeric)`), sql`, `);
+    const res = await tx.execute<{ id: string; stock: string }>(sql`
+      update ${stockLevels} as s
+         set stock = round(s.stock + v.delta, 4), version = s.version + 1, updated_at = now()
+        from (values ${values}) as v(id, delta)
+       where s.id = v.id
+   returning s.id, s.stock`);
+    return new Map(res.rows.map((r) => [r.id, Number(r.stock)]));
+  }
+
+  insertMovements(tx: DbOrTx, rows: (typeof stockMovements.$inferInsert)[]) {
+    if (!rows.length) return Promise.resolve();
+    return tx.insert(stockMovements).values(rows).then(() => undefined);
   }
 
   /** Qoldiq qatorini 0 bilan yaratadi (parallel yaratilgan bo'lsa — jim o'tadi). */

@@ -201,12 +201,12 @@ export class SalesService {
       });
       await this.repo.insertLines(tx, q.lines.map((l, i) => ({ saleId, productId: l.productId, variantId: l.variantId, name: l.name, variantName: l.variantName, sku: l.sku, categoryId: l.categoryId, unit: l.unit, qty: l.qty, baseQty: l.baseQty, unitPrice: l.unitPrice, lineTotal: l.lineTotal, costPerBase: l.costPerBase, cuts: l.cuts ?? null, sortOrder: i })));
       if (pays.length) await this.repo.insertPayments(tx, pays.map((p) => ({ saleId, methodId: p.m.id, methodCode: p.m.code, kind: p.m.kind, amount: p.amount, amountUsd: p.amountUsd, ref: p.ref })));
-      // Qoldiqni ayirish (qulflangan qatorlar)
-      for (const [key, need] of q.need) {
+      // Qoldiqni ayirish (qulflangan qatorlar): hammasi bitta UPDATE + bitta INSERT
+      await this.inventory.applyMovements(tx, [...q.need].map(([key, need]) => {
         const lvl = q.levels.get(key)!;
         const l = q.lines.find((x) => `${x.productId}|${x.variantId ?? ''}` === key)!;
-        await this.inventory.applyMovement(tx, lvl, { branchId, productId: l.productId, variantId: l.variantId, type: 'sale', qtyBase: -need, unit: l.unit, qtyUnit: -need, costPerBase: lvl.costPrice, refType: 'sale', refId: saleId, userId: user.id });
-      }
+        return { lvl, m: { branchId, productId: l.productId, variantId: l.variantId, type: 'sale' as const, qtyBase: -need, unit: l.unit, qtyUnit: -need, costPerBase: lvl.costPrice, refType: 'sale', refId: saleId, userId: user.id } };
+      }));
       // Nasiya
       if (remaining > 0 && customer) {
         const r = await this.customers.applyDebt(tx, { customerId: customer.id, branchId, type: 'sale_debt', amount: remaining, refType: 'sale', refId: saleId, userId: user.id, dueDays: rules.defaultCreditDays });

@@ -32,17 +32,37 @@ export class InventoryService {
    * (kirim), aks holda null (sotuvda omborda bo'lmagan mahsulot → not_in_branch).
    */
   async lockLevels(tx: DbOrTx, branchId: string, keys: LevelKey[], create: boolean): Promise<Map<string, LockedLevel | null>> {
-    const sorted = [...new Map(keys.map((k) => [levelKey(k), k])).values()].sort((a, b) => levelKey(a).localeCompare(levelKey(b)));
-    const out = new Map<string, LockedLevel | null>();
-    for (const k of sorted) {
-      let row = await this.repo.lockLevel(tx, branchId, k);
-      if (!row && create) {
-        await this.repo.insertLevelIfMissing(tx, branchId, k);
-        row = await this.repo.lockLevel(tx, branchId, k);
-      }
-      out.set(levelKey(k), row ? toLockedLevel(row) : null);
+    const uniq = [...new Map(keys.map((k) => [levelKey(k), k])).values()];
+    // Bitta so'rov bilan qulflanadi (id tartibida); yo'q qatorlar kerak bo'lsa bitta INSERT bilan yaratilib qayta qulflanadi
+    let rows = await this.repo.lockLevelsMany(tx, branchId, uniq);
+    if (create && rows.length < uniq.length) {
+      const have = new Set(rows.map((r) => levelKey(r)));
+      await this.repo.insertLevelsIfMissing(tx, branchId, uniq.filter((k) => !have.has(levelKey(k))));
+      rows = await this.repo.lockLevelsMany(tx, branchId, uniq);
     }
-    return out;
+    const byKey = new Map(rows.map((r) => [levelKey(r), r]));
+    return new Map(uniq.map((k) => { const r = byKey.get(levelKey(k)); return [levelKey(k), r ? toLockedLevel(r) : null] as const; }));
+  }
+
+  /**
+   * Bir nechta harakatni guruh qilib yozadi: qoldiqlar bitta UPDATE, jurnal bitta INSERT (sotuvda har qator uchun
+   * 2 ta so'rov edi). Natija `applyMovement` bilan bir xil: balanceAfter = yangi qoldiq, `lvl.stock` yangilanadi.
+   */
+  async applyMovements(tx: DbOrTx, items: { lvl: LockedLevel; m: Parameters<InventoryService['applyMovement']>[2] }[]) {
+    if (!items.length) return;
+    const deltas = new Map<string, number>();
+    for (const { lvl, m } of items) deltas.set(lvl.id, qty4((deltas.get(lvl.id) ?? 0) + qty4(m.qtyBase)));
+    if (deltas.size !== items.length) {
+      // Bitta qoldiq qatoriga bir nechta harakat — ketma-ketlik muhim, oddiy yo'l
+      for (const { lvl, m } of items) await this.applyMovement(tx, lvl, m);
+      return;
+    }
+    const after = await this.repo.incrementStocks(tx, [...deltas].map(([id, delta]) => ({ id, delta })));
+    await this.repo.insertMovements(tx, items.map(({ lvl, m }) => ({
+      branchId: m.branchId, productId: m.productId, variantId: m.variantId, type: m.type, qtyBase: qty4(m.qtyBase), unit: m.unit, qtyUnit: m.qtyUnit,
+      costPerBase: m.costPerBase ?? null, refType: m.refType ?? null, refId: m.refId ?? null, balanceAfter: after.get(lvl.id)!, userId: m.userId,
+    })));
+    for (const { lvl } of items) lvl.stock = after.get(lvl.id)!;
   }
 
   /** Qoldiqni o'zgartirib, jurnalga yozadi. Qaytaradi: yangi qoldiq. */
