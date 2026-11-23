@@ -11,6 +11,8 @@ const schema = z.object({
   REDIS_URL: z.string().url().optional(),
   JWT_ACCESS_SECRET: z.string().min(32, 'JWT_ACCESS_SECRET kamida 32 belgi'),
   JWT_ACCESS_TTL: z.string().default('15m'),
+  /** Rotation qilingan refresh tokenni shu muddat ichida qayta qabul qilish (javob tarmoqda yo'qolgan mijoz qayta urinadi). 0 — o'chiq. */
+  REFRESH_REUSE_GRACE_SEC: z.coerce.number().int().min(0).max(300).default(60),
   REFRESH_TTL_DAYS: z.coerce.number().int().positive().default(30),
   CORS_ORIGINS: z
     .string()

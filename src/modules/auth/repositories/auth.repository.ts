@@ -106,6 +106,16 @@ export class AuthRepository {
     return tx.select().from(sessions).where(eq(sessions.refreshHash, refreshHash)).limit(1).then((r) => r[0] ?? null);
   }
 
+  /**
+   * Oilada `since` dan keyin yaratilgan tirik sessiya bormi — ya'ni token ROTATION bilan almashtirilgan (vorisi tirik),
+   * logout yoki oila bekor qilinishi emas (ularda tirik voris qolmaydi).
+   */
+  hasAliveSuccessor(familyId: string, since: Date, tx: DbOrTx = this.db): Promise<boolean> {
+    return tx.select({ id: sessions.id }).from(sessions)
+      .where(and(eq(sessions.familyId, familyId), isNull(sessions.revokedAt), gt(sessions.expiresAt, new Date()), gt(sessions.createdAt, new Date(since.getTime() - 5_000))))
+      .limit(1).then((r) => r.length > 0);
+  }
+
   /** Oiladagi barcha tirik sessiyalar bekor (refresh token qayta ishlatilganda). */
   revokeFamily(familyId: string, tx: DbOrTx = this.db) {
     return tx.update(sessions).set({ revokedAt: new Date() }).where(and(eq(sessions.familyId, familyId), isNull(sessions.revokedAt)));

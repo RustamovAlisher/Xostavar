@@ -1,6 +1,6 @@
 import { INestApplication } from '@nestjs/common';
 import request from 'supertest';
-import { as, client, code, createApp, login, seeded, uniq, type Seeded } from './helpers.js';
+import { as, client, code, createApp, login, rawDb, seeded, uniq, type Seeded } from './helpers.js';
 
 describe('auth (TZ 6)', () => {
   let app: INestApplication;
@@ -99,24 +99,46 @@ describe('auth (TZ 6)', () => {
   });
 
   describe('refresh va sessiyalar', () => {
-    it('refresh: yangi juftlik; eski refresh qayta ishlatilsa — butun oila bekor', async () => {
+    /** Rotation qilingan sessiyalarni «eskirtiradi» — grace oynasi (REFRESH_REUSE_GRACE_SEC) o'tib ketgandek. */
+    const ageRevoked = async (userLogin: string) => {
+      const db = rawDb();
+      try { await db.query(`update sessions set revoked_at = revoked_at - interval '10 minutes' where revoked_at is not null and user_id = (select id from users where username = $1)`, [userLogin]); } finally { await db.end(); }
+    };
+    it('refresh: yangi juftlik; eski refresh grace o\'tgach qayta ishlatilsa — butun oila bekor', async () => {
       const first = await login(app, 'kassir');
       const r1 = await raw().post('/api/v1/auth/refresh').send({ refreshToken: first.refreshToken });
       expect(r1.status).toBe(200);
       expect(r1.body.refreshToken).not.toBe(first.refreshToken);
-      // Eski token qayta → 401 va oilaning yangisi ham bekor
+      await ageRevoked('kassir');
+      // Eski token qayta (grace o'tgan) → 401 va oilaning yangisi ham bekor
       expect((await raw().post('/api/v1/auth/refresh').send({ refreshToken: first.refreshToken })).status).toBe(401);
       expect((await raw().post('/api/v1/auth/refresh').send({ refreshToken: r1.body.refreshToken })).status).toBe(401);
       expect((await raw().post('/api/v1/auth/refresh').send({ refreshToken: 'yoq' })).status).toBe(401);
     });
-    it('parallel refresh bir xil token bilan: faqat bittasi yutadi, qolgani 401 va oila bekor (atomik rotation)', async () => {
+    it('refresh javobi yo\'qolgan mijoz: rotation qilingan token grace ichida qayta kelsa — yangi juftlik, oila tirik qoladi', async () => {
+      const first = await login(app, 'kassir');
+      const lost = await raw().post('/api/v1/auth/refresh').send({ refreshToken: first.refreshToken }); // javobi mijozga yetmadi
+      expect(lost.status).toBe(200);
+      // mijoz eski refresh bilan qayta urinadi → yangi juftlik
+      const again = await raw().post('/api/v1/auth/refresh').send({ refreshToken: first.refreshToken });
+      expect(again.status).toBe(200);
+      expect(again.body.refreshToken).not.toBe(lost.body.refreshToken);
+      expect((await raw().get('/api/v1/auth/me').set('Authorization', `Bearer ${again.body.accessToken}`)).status).toBe(200);
+      // oila bekor qilinmagan: yangi token bilan keyingi rotation ishlaydi
+      expect((await raw().post('/api/v1/auth/refresh').send({ refreshToken: again.body.refreshToken })).status).toBe(200);
+      // logout qilingan sessiya tokeni grace ichida ham qabul qilinmaydi (voris yo'q)
+      const b = await login(app, 'kassir');
+      expect((await raw().post("/api/v1/auth/logout").set("Authorization", `Bearer ${b.token}`).send({})).status).toBe(204);
+      expect((await raw().post('/api/v1/auth/refresh').send({ refreshToken: b.refreshToken })).status).toBe(401);
+    });
+    it('parallel refresh bir xil token bilan (ikki oyna): hammasi o\'z juftligini oladi; grace o\'tgach eski token — 401 va oila bekor', async () => {
       const first = await login(app, 'kassir');
       const rs = await Promise.all([1, 2, 3].map(() => raw().post('/api/v1/auth/refresh').send({ refreshToken: first.refreshToken })));
-      const ok = rs.filter((r) => r.status === 200);
-      expect(ok.length).toBeLessThanOrEqual(1);
-      expect(rs.filter((r) => r.status === 401).length).toBeGreaterThanOrEqual(2);
-      // Qayta ishlatish aniqlandi → yutgan sessiya ham bekor
-      if (ok.length) expect((await raw().post('/api/v1/auth/refresh').send({ refreshToken: ok[0].body.refreshToken })).status).toBe(401);
+      expect(rs.map((r) => r.status)).toEqual([200, 200, 200]);
+      expect(new Set(rs.map((r) => r.body.refreshToken)).size).toBe(3);
+      await ageRevoked('kassir');
+      expect((await raw().post('/api/v1/auth/refresh').send({ refreshToken: first.refreshToken })).status).toBe(401);
+      for (const r of rs) expect((await raw().post('/api/v1/auth/refresh').send({ refreshToken: r.body.refreshToken })).status).toBe(401);
     });
     it('sessions ro\'yxati, bittasini o\'chirish, logout-all', async () => {
       const a = await login(app, 'omborchi');

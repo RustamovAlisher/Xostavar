@@ -123,28 +123,50 @@ export class AuthService {
     return { accessToken, refreshToken, sessionId };
   }
 
-  /** Rotation: eski refresh bekor qilinadi, yangisi beriladi. Bekor qilingan token qayta kelsa — butun oila o'chadi. */
+  /**
+   * Rotation: eski refresh bekor qilinadi, yangisi beriladi. Bekor qilingan token qayta kelsa — butun oila o'chadi.
+   *
+   * Istisno (REFRESH_REUSE_GRACE_SEC, standart 60 s): token hozirgina rotation qilingan va vorisi tirik bo'lsa, bu
+   * o'g'irlik emas — mijoz yangi juftlikni ololmagan (javob tarmoqda yo'qolgan yoki ikki oyna bir vaqtda yangilagan).
+   * Bunda oila bekor qilinmaydi, shu oilada yangi juftlik beriladi. Aks holda kassa «Sessiya bekor qilingan» bilan
+   * to'lov o'rtasida ishdan chiqardi.
+   */
   async refresh(refreshToken: string, meta: { ip?: string; userAgent?: string }) {
     const s = await this.repo.findSessionByHash(sha256(refreshToken));
     if (!s) throw unauthorized('Sessiya topilmadi, qayta kiring');
+    if (s.expiresAt < new Date()) throw unauthorized('Sessiya muddati tugagan, qayta kiring');
+    const user = await this.loadUser(s.userId);
+    if (!user) throw unauthorized('Akkaunt faol emas');
     if (s.revokedAt) {
+      if (await this.withinReuseGrace(s.familyId, s.revokedAt)) return this.reissueInGrace(s, user, meta);
       // Token qayta ishlatilmoqda — o'g'irlangan bo'lishi mumkin
       this.logger.warn(`Refresh token qayta ishlatildi, sessiya oilasi bekor qilindi: userId=${s.userId} family=${s.familyId} ip=${meta.ip ?? '-'}`);
       await this.repo.revokeFamily(s.familyId);
       throw unauthorized('Sessiya bekor qilingan, qayta kiring');
     }
-    if (s.expiresAt < new Date()) throw unauthorized('Sessiya muddati tugagan, qayta kiring');
-    const user = await this.loadUser(s.userId);
-    if (!user) throw unauthorized('Akkaunt faol emas');
     // Atomik rotation: eski sessiyani bekor qilish va yangisini yozish bitta tranzaksiyada.
-    // Ikki parallel refresh bir xil token bilan kelsa faqat bittasi yutadi; ikkinchisi qayta ishlatish deb hisoblanadi va oila bekor bo'ladi
+    // Ikki parallel refresh bir xil token bilan kelsa faqat bittasi rotation qiladi; ikkinchisi grace ichida o'z juftligini oladi
     const tokens = await this.repo.runInTx(async (tx) => ((await this.repo.revokeIfAlive(s.id, tx)) === 0 ? null : this.issueTokens(s.userId, s.familyId, meta, tx)));
     if (!tokens) {
+      const now = await this.repo.findSessionState(s.id);
+      if (now?.revokedAt && (await this.withinReuseGrace(s.familyId, now.revokedAt))) return this.reissueInGrace(s, user, meta);
       this.logger.warn(`Refresh token parallel qayta ishlatildi, sessiya oilasi bekor qilindi: userId=${s.userId} family=${s.familyId} ip=${meta.ip ?? '-'}`);
       await this.repo.revokeFamily(s.familyId);
       throw unauthorized('Sessiya bekor qilingan, qayta kiring');
     }
     this.logger.debug(`Refresh: user=${user.username} session=${s.id} → ${tokens.sessionId}`);
+    return { ...tokens, user };
+  }
+
+  private async withinReuseGrace(familyId: string, revokedAt: Date): Promise<boolean> {
+    const grace = this.config.get('REFRESH_REUSE_GRACE_SEC', { infer: true }) * 1000;
+    if (!grace || Date.now() - revokedAt.getTime() > grace) return false;
+    return this.repo.hasAliveSuccessor(familyId, revokedAt);
+  }
+
+  private async reissueInGrace(s: { id: string; userId: string; familyId: string }, user: NonNullable<Awaited<ReturnType<AuthService['loadUser']>>>, meta: { ip?: string; userAgent?: string }) {
+    const tokens = await this.issueTokens(s.userId, s.familyId, meta);
+    this.logger.log(`Refresh (grace): user=${user.username} rotation qilingan token qayta keldi, yangi juftlik berildi: session=${s.id} → ${tokens.sessionId}`);
     return { ...tokens, user };
   }
 
