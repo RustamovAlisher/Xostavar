@@ -63,6 +63,9 @@ export const productVariants = pgTable(
     /** Ota mahsulot `price_currency = 'USD'` bo'lsa — asl narx dollarda. */
     retailPriceUsd: numeric('retail_price_usd', { precision: 14, scale: 2, mode: 'number' }),
     sortOrder: integer('sort_order').notNull().default(0),
+    /** Variant rasmi (mahsulot rasmi kabi: UPLOAD_DIR ga nisbatan yo'l; `thumbPath` — 320px eskiz). */
+    imagePath: text('image_path'),
+    thumbPath: text('thumb_path'),
     deletedAt: deletedAt(),
     createdAt: createdAt(),
     updatedAt: updatedAt(),

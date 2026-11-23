@@ -99,6 +99,13 @@
       "when": 1795331323272,
       "tag": "0013_customer_phone_optional_debt_note",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1795414849837,
+      "tag": "0014_variant_images",
+      "breakpoints": true
     }
   ]
 }

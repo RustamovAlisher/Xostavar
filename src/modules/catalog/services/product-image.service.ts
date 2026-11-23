@@ -59,6 +59,47 @@ export class ProductImageService {
     return this.catalog.get(user, branchId, id);
   }
 
+  /** Variant rasmi: mahsulot rasmi bilan bir xil qoidalar; fayl nomi variant id bilan. */
+  async uploadVariant(user: AuthUser, branchId: string | null, productId: string, variantId: string, file: UploadedImage | undefined): Promise<ProductView> {
+    if (!file?.buffer?.length) throw badRequest('Rasm fayli yuborilmadi (multipart maydon nomi: file)');
+    if (!IMAGE_MIME.has(file.mimetype)) throw badRequest('Faqat JPEG, PNG yoki WebP rasm qabul qilinadi');
+    const p = await this.repo.findById(productId);
+    if (!p) throw notFound('Mahsulot');
+    const v = await this.repo.findVariant(productId, variantId);
+    if (!v) throw notFound('Variant');
+
+    const img = await processProductImage(file.buffer).catch(() => {
+      throw badRequest("Rasm faylini o'qib bo'lmadi — buzilgan yoki qo'llab-quvvatlanmaydigan format");
+    });
+    const paths = await storeProductImage(this.dir, variantId, img);
+    try {
+      await runTx(this.db, async (tx) => {
+        await this.repo.updateVariant(tx, variantId, paths);
+        await this.audit.log(user, { action: 'edit', module: 'Mahsulotlar', targetId: productId, targetName: p.name, details: `Variant rasmi yuklandi: ${v.name} (${img.width}×${img.height})` }, tx);
+      });
+    } catch (e) {
+      await removeProductFiles(this.dir, [paths.imagePath, paths.thumbPath]);
+      throw e;
+    }
+    await removeProductFiles(this.dir, [v.imagePath, v.thumbPath]);
+    return this.catalog.get(user, branchId, productId);
+  }
+
+  async removeVariant(user: AuthUser, branchId: string | null, productId: string, variantId: string): Promise<ProductView> {
+    const p = await this.repo.findById(productId);
+    if (!p) throw notFound('Mahsulot');
+    const v = await this.repo.findVariant(productId, variantId);
+    if (!v) throw notFound('Variant');
+    if (v.imagePath || v.thumbPath) {
+      await runTx(this.db, async (tx) => {
+        await this.repo.updateVariant(tx, variantId, { imagePath: null, thumbPath: null });
+        await this.audit.log(user, { action: 'edit', module: 'Mahsulotlar', targetId: productId, targetName: p.name, details: `Variant rasmi o'chirildi: ${v.name}` }, tx);
+      });
+      await removeProductFiles(this.dir, [v.imagePath, v.thumbPath]);
+    }
+    return this.catalog.get(user, branchId, productId);
+  }
+
   async remove(user: AuthUser, branchId: string | null, id: string): Promise<ProductView> {
     const p = await this.repo.findById(id);
     if (!p) throw notFound('Mahsulot');

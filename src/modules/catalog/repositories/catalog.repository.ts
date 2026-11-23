@@ -177,6 +177,12 @@ export class CatalogRepository {
     return tx.update(productVariants).set(v).where(eq(productVariants.id, id));
   }
 
+  /** Faol variant (rasm yuklash/o'chirish uchun). */
+  async findVariant(productId: string, variantId: string) {
+    const [v] = await this.db.select().from(productVariants).where(and(eq(productVariants.id, variantId), eq(productVariants.productId, productId), isNull(productVariants.deletedAt)));
+    return v;
+  }
+
   activeVariants(tx: DbOrTx, productId: string) {
     return tx.select().from(productVariants).where(and(eq(productVariants.productId, productId), isNull(productVariants.deletedAt)));
   }

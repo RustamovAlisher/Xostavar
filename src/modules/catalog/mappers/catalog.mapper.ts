@@ -43,6 +43,9 @@ export interface VariantView {
   stock: number;
   minStock?: number;
   conversions?: { unit: string; factor: number; price?: number; barcode?: string }[];
+  /** Variant rasmi; yo'q bo'lsa undefined (mijoz mahsulot rasmini ko'rsatadi). */
+  imageUrl?: string;
+  thumbUrl?: string;
 }
 
 const key = (p: string, v: string | null) => `${p}|${v ?? ''}`;
@@ -85,6 +88,7 @@ export function toProductViews(rows: ProductRow[], ch: ProductChildren, withCost
         ...(withCost ? { wholesalePrice: vp?.wholesalePrice ?? v.wholesalePrice ?? undefined, costPrice: vl?.costPrice != null ? Number(vl.costPrice) : undefined } : {}),
         stock: vl ? Number(vl.stock) : 0, minStock: vl?.minStock != null ? Number(vl.minStock) : undefined,
         conversions: vConvs.length ? convView(vConvs, vCodes) : undefined,
+        imageUrl: uploadUrl(v.imagePath), thumbUrl: uploadUrl(v.thumbPath),
       };
     });
     const inBranch = !!l || vs.some((v) => lvl.has(key(p.id, v.id)));

@@ -76,6 +76,29 @@ export class CatalogController {
     return this.images.remove(u, req.branchId ?? null, id);
   }
 
+  /** Variant rasmi: mahsulot rasmi bilan bir xil (multipart `file`). */
+  @Post(':id/variants/:variantId/image')
+  @Perms('add_product', 'edit_product')
+  @HttpCode(200)
+  @UseInterceptors(FileInterceptor('file', { limits: { fileSize: IMAGE_MAX_BYTES, files: 1 } }))
+  @ApiConsumes('multipart/form-data')
+  @ApiBody({ schema: { type: 'object', required: ['file'], properties: { file: { type: 'string', format: 'binary' } } } })
+  uploadVariantImage(
+    @CurrentUser() u: AuthUser,
+    @Req() req: AuthRequest,
+    @Param('id', ParseUUIDPipe) id: string,
+    @Param('variantId', ParseUUIDPipe) variantId: string,
+    @UploadedFile() file?: UploadedImage,
+  ) {
+    return this.images.uploadVariant(u, req.branchId ?? null, id, variantId, file);
+  }
+
+  @Delete(':id/variants/:variantId/image')
+  @Perms('add_product', 'edit_product')
+  removeVariantImage(@CurrentUser() u: AuthUser, @Req() req: AuthRequest, @Param('id', ParseUUIDPipe) id: string, @Param('variantId', ParseUUIDPipe) variantId: string) {
+    return this.images.removeVariant(u, req.branchId ?? null, id, variantId);
+  }
+
   /** Filial bo'yicha narx (TZ 7.3, 14.4 (2)) — faqat egasi (edit_product). */
   @Put(':id/branch-price')
   @Perms('edit_product')

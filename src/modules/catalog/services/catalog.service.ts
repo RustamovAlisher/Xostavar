@@ -188,6 +188,7 @@ export class CatalogService {
   }
 
   async update(user: AuthUser, branchId: string | null, id: string, input: ProductDto): Promise<ProductView> {
+    const orphanFiles: (string | null)[] = []; // olib tashlangan variantlarning rasm fayllari (tranzaksiya tugagach o'chiriladi)
     await runTx(this.db, async (tx) => {
       const old = await this.repo.findByIdForUpdate(tx, id);
       if (!old) throw notFound('Mahsulot');
@@ -213,6 +214,7 @@ export class CatalogService {
           throw conflict('in_use', `"${v.name}" variantining ${stocked[0].branch} omborida qoldig'i bor (${Number(stocked[0].stock)}) — avval qoldiqni 0 ga keltiring`, { variantId: v.id });
         }
         await this.repo.softDeleteVariants(tx, removed.map((v) => v.id));
+        orphanFiles.push(...removed.flatMap((v) => [v.imagePath, v.thumbPath]));
       }
       const ids = new Map<number, string>();
       if (dto.isVariable) {
@@ -232,6 +234,7 @@ export class CatalogService {
       else for (const [i, v] of variants.entries()) await this.writeLevelFields(tx, user, branchId, id, ids.get(i) ?? null, v);
       await this.audit.log(user, { action: 'edit', module: 'Mahsulotlar', targetId: id, targetName: dto.name.trim(), details: 'Mahsulot tahrirlandi', diff: { before: productSummary({ ...old, conversions: [], variants: [] } as unknown as ProductDto, old.sku), after: productSummary(dto, sku) } }, tx);
     });
+    await removeProductFiles(this.uploadDir, orphanFiles);
     return this.get(user, branchId, id);
   }
 
@@ -243,10 +246,11 @@ export class CatalogService {
       const stocked = await this.repo.findStocked(tx, id);
       if (stocked) throw conflict('in_use', `${stocked.branch} omborida qoldig'i bor (${Number(stocked.stock)}) — avval qoldiqni 0 ga keltiring`);
       // Kodlar bo'shatiladi, tarixiy cheklar nusxalar bilan saqlanadi
+      const variantFiles = (await this.repo.activeVariants(tx, id)).flatMap((v) => [v.imagePath, v.thumbPath]);
       if (await this.repo.hasHistory(tx, id)) await this.repo.softDeleteProduct(tx, id);
       else await this.repo.hardDeleteProduct(tx, id); // cascade: variantlar, konversiyalar, kodlar, qoldiq qatorlari
       await this.audit.log(user, { action: 'delete', module: 'Mahsulotlar', targetId: id, targetName: p.name, details: `O'chirildi (SKU: ${p.sku})` }, tx);
-      return [p.imagePath, p.thumbPath];
+      return [p.imagePath, p.thumbPath, ...variantFiles];
     });
     await removeProductFiles(this.uploadDir, files); // rasm fayllari endi kerak emas (tiklash yo'q)
   }
