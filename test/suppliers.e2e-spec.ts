@@ -194,6 +194,25 @@ describe('suppliers: yetkazib beruvchilarga qarz', () => {
     expect((await s.kassir.put(`/stock-in/${rc.body.id}/payment`, { paidAmount: 0 })).status).toBe(403);
   });
 
+  it("yetkazib beruvchini o'chirish: qarzi yoki jurnali bor bo'lsa 409; toza bo'lsa o'chadi, kirimlarida nomi qoladi", async () => {
+    const used = uniq('Qarzli ');
+    await receive({ supplierName: used, paidAmount: 0 });
+    const usedId = await supplierId(used);
+    expect((await s.admin.del(`/suppliers/${usedId}`)).status).toBe(409);
+    await s.admin.post(`/suppliers/${usedId}/payments`, { amount: 10000 });
+    expect((await s.admin.del(`/suppliers/${usedId}`)).status).toBe(409); // qarz 0, lekin jurnal bor
+
+    const clean = uniq('Toza ');
+    const rc = await receive({ supplierName: clean });
+    const cleanId = await supplierId(clean);
+    expect((await s.omborchi.del(`/suppliers/${cleanId}`)).status).toBe(403);
+    expect((await s.admin.del(`/suppliers/${cleanId}`)).status).toBe(204);
+    expect((await s.admin.get(`/suppliers/${cleanId}`)).status).toBe(404);
+    const stillThere = await s.admin.get(`/stock-in/${rc.body.id}`);
+    expect(stillThere.body.supplierName).toBe(clean);
+    expect(stillThere.body.supplierId).toBeNull();
+  });
+
   it("narxi kiritilmagan kirim qarzga olinsa (jami 0) keyin tannarx kiritilganda qarz paydo bo'ladi", async () => {
     const name = uniq('Narxsiz ');
     const rc = await s.admin.post('/stock-in', { supplierName: name, paidAmount: 0, lines: [{ productId, unit: 'piece', qty: 14 }] });

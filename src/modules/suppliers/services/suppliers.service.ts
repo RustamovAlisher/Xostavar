@@ -124,6 +124,18 @@ export class SuppliersService {
     return this.get(id);
   }
 
+  /** O'chirish: qarzi bor yoki qarz jurnali yozilgan yetkazib beruvchi o'chmaydi (hisob-kitob tarixi yo'qolmasin). Kirimlarda nomi qoladi. */
+  async remove(user: AuthUser, id: string) {
+    await runTx(this.db, async (tx) => {
+      const s = await this.repo.lock(tx, id);
+      if (!s) throw notFound('Yetkazib beruvchi');
+      if (s.totalDebt !== 0) throw conflict('in_use', `Qarzi bor yetkazib beruvchini o'chirib bo'lmaydi (${fmt(s.totalDebt)} so'm). Avval qarzni yoping`);
+      if ((await this.repo.ledgerCount(tx, id)) > 0) throw conflict('in_use', "Qarz yozuvlari bor yetkazib beruvchini o'chirib bo'lmaydi");
+      await this.repo.delete(tx, id);
+      await this.audit.log(user, { action: 'delete', module: 'Yetkazib beruvchilar', targetId: id, targetName: s.name, details: "Yetkazib beruvchi o'chirildi" }, tx);
+    });
+  }
+
   /* ───────── Qarz harakati ───────── */
 
   /** Yetkazib beruvchi qatorini qulflab qarzni o'zgartiradi, jurnalga yozadi. Qaytaradi: yangi qoldiq. */

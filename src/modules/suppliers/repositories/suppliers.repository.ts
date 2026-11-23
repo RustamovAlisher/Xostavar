@@ -69,6 +69,14 @@ export class SuppliersRepository {
       .then((r) => r[0]?.totalDebt ?? null);
   }
 
+  ledgerCount(tx: DbOrTx, supplierId: string): Promise<number> {
+    return tx.select({ n: sql<number>`count(*)::int` }).from(supplierLedger).where(eq(supplierLedger.supplierId, supplierId)).then((r) => r[0]?.n ?? 0);
+  }
+
+  delete(tx: DbOrTx, id: string) {
+    return tx.delete(suppliers).where(eq(suppliers.id, id));
+  }
+
   insertLedger(tx: DbOrTx, v: SupplierLedgerInsert) {
     return tx.insert(supplierLedger).values(v);
   }

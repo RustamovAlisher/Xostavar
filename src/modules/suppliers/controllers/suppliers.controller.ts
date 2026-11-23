@@ -1,4 +1,4 @@
-import { Body, Controller, Get, Param, ParseUUIDPipe, Patch, Post, Put, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, Param, ParseUUIDPipe, Patch, Post, Put, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { BranchId, BranchScoped, CurrentUser, Perms, type AuthUser } from '../../../common/decorators/auth-context.js';
 import { Idempotent } from '../../../common/interceptors/idempotency.interceptor.js';
@@ -36,6 +36,14 @@ export class SuppliersController {
   @Perms('manage_expenses')
   update(@CurrentUser() u: AuthUser, @Param('id', ParseUUIDPipe) id: string, @Body() dto: SupplierDto) {
     return this.suppliers.update(u, id, dto);
+  }
+
+  /** Faqat qarzi va qarz yozuvlari yo'q yetkazib beruvchi o'chadi; kirimlarida nomi qoladi. */
+  @Delete(':id')
+  @Perms('manage_expenses')
+  @HttpCode(204)
+  remove(@CurrentUser() u: AuthUser, @Param('id', ParseUUIDPipe) id: string) {
+    return this.suppliers.remove(u, id);
   }
 
   @Post(':id/payments')
