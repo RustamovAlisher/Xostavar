@@ -87,6 +87,46 @@ describe('customers (TZ 7.5, 8.8, 9.8)', () => {
     const debtor = (await s.admin.get('/customers?hasDebt=true&pageSize=1')).body.items[0];
     expect(code(await s.admin.del(`/customers/${debtor.id}`))).toBe('in_use');
   });
+  it("qarzi bor mijozni o'chirish: faqat writeOff=true bilan; qarz jurnalga yozilib 0 ga tushadi, audit summani ko'rsatadi", async () => {
+    const c = (await s.admin.post('/customers', { name: 'Ketgan mijoz', creditLimit: 5_000_000 }, { idem: false })).body;
+    await s.admin.post(`/customers/${c.id}/debts`, { amount: 75_000 });
+    const no = await s.admin.del(`/customers/${c.id}`);
+    expect(code(no)).toBe('in_use');
+    expect(no.body.error.message).toMatch(/75/);
+    expect((await s.kassir.del(`/customers/${c.id}?writeOff=true`)).status).toBe(403);
+    expect((await s.admin.del(`/customers/${c.id}?writeOff=true`)).status).toBe(204);
+    expect((await s.admin.get(`/customers/${c.id}`)).status).toBe(404);
+    const audit = (await s.admin.get(`/audit-logs?q=${encodeURIComponent('Ketgan mijoz')}&pageSize=5`)).body;
+    const items = (audit.items ?? []) as { details: string }[];
+    if (items.length) expect(items.some((a) => /75\s?000 so'm qarz hisobdan chiqarildi/.test(a.details))).toBe(true);
+  });
+  it("qarzni tahrirlash (PUT /customers/:id/debt): oshirish va kamaytirish jurnalga adjustment bo'lib yoziladi; faqat manage_users; manfiy rad", async () => {
+    const c = (await s.admin.post('/customers', { name: 'Tahrir qarz', creditLimit: 5_000_000 }, { idem: false })).body;
+    await s.admin.post(`/customers/${c.id}/debts`, { amount: 100_000 });
+    const down = await s.admin.put(`/customers/${c.id}/debt`, { amount: 60_000, note: 'xato kiritilgan' });
+    expect(down.status).toBe(200);
+    expect(down.body.totalDebtUZS).toBe(60_000);
+    const up = await s.admin.put(`/customers/${c.id}/debt`, { amount: 90_000 });
+    expect(up.body.totalDebtUZS).toBe(90_000);
+    // o'zgarishsiz — jurnal yozilmaydi
+    expect((await s.admin.put(`/customers/${c.id}/debt`, { amount: 90_000 })).body.totalDebtUZS).toBe(90_000);
+    const led = (await s.admin.get(`/customers/${c.id}/ledger`)).body.items as { type: string; amount: number; balanceAfter: number; note: string | null }[];
+    const adj = led.filter((x) => x.type === 'adjustment');
+    expect(adj).toHaveLength(3);
+    expect(adj.some((x) => x.amount === -40_000 && x.balanceAfter === 60_000 && x.note === 'xato kiritilgan')).toBe(true);
+    expect(adj.some((x) => x.amount === 30_000 && x.balanceAfter === 90_000)).toBe(true);
+    // profil jami ledger bilan mos (manfiy tuzatish FIFO bo'yicha yopadi)
+    const p = (await s.admin.get(`/customers/${c.id}/profile`)).body;
+    expect(p.customer.totalDebtUZS).toBe(90_000);
+    // 0 ga tushirish, keyin oddiy o'chirish ishlaydi
+    expect((await s.admin.put(`/customers/${c.id}/debt`, { amount: 0 })).body.totalDebtUZS).toBe(0);
+    // ruxsat va validatsiya
+    expect((await s.kassir.put(`/customers/${c.id}/debt`, { amount: 10_000 })).status).toBe(403);
+    expect((await s.admin.put(`/customers/${c.id}/debt`, { amount: -1 })).status).toBe(400);
+    expect((await s.admin.put(`/customers/${c.id}/debt`, { amount: 1.5 })).status).toBe(400);
+    expect((await s.admin.put(`/customers/${randomUUID()}/debt`, { amount: 1 })).status).toBe(404);
+    expect((await s.admin.del(`/customers/${c.id}`)).status).toBe(204);
+  });
   it('ledger: har harakat balance_after bilan; customers.total_debt = oxirgi balance_after (TZ 18.6)', async () => {
     const c = (await s.admin.post('/customers', { name: 'Ledger', phone: phone(), creditLimit: 9_000_000 }, { idem: false })).body;
     const p = await makeProduct(s.admin, s, { stock: 10, price: 10_000 });

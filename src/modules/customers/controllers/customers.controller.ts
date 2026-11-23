@@ -1,10 +1,10 @@
-import { Body, Controller, Delete, Get, HttpCode, Param, ParseUUIDPipe, Patch, Post, Query } from '@nestjs/common';
+import { Body, Controller, Delete, Get, HttpCode, Param, ParseUUIDPipe, Patch, Post, Put, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { BranchId, BranchScoped, CurrentUser, Perms, Req, requestIdOf, type AuthRequest, type AuthUser } from '../../../common/decorators/auth-context.js';
 import { Idempotent } from '../../../common/interceptors/idempotency.interceptor.js';
 import { PageQuery } from '../../../common/utils/pagination.js';
 import { SalesService } from '../../sales/services/sales.service.js';
-import { CustomerDto, CustomerListQuery, DebtPaymentDto, ManualDebtDto } from '../dto/customers.dto.js';
+import { CustomerDeleteQuery, CustomerDto, CustomerListQuery, DebtPaymentDto, ManualDebtDto, SetDebtDto } from '../dto/customers.dto.js';
 import { CustomersService } from '../services/customers.service.js';
 
 @ApiTags('customers')
@@ -54,11 +54,21 @@ export class CustomersController {
     return this.customers.update(u, id, dto);
   }
 
+  /** O'chirish (yumshoq). Qarzi bor mijoz faqat `?writeOff=true` bilan: qarz avval hisobdan chiqariladi (jurnalga yoziladi). */
   @Delete(':id')
   @Perms('manage_users')
+  @BranchScoped()
   @HttpCode(204)
-  remove(@CurrentUser() u: AuthUser, @Param('id', ParseUUIDPipe) id: string) {
-    return this.customers.remove(u, id);
+  remove(@CurrentUser() u: AuthUser, @BranchId() branchId: string, @Param('id', ParseUUIDPipe) id: string, @Query() q: CustomerDeleteQuery) {
+    return this.customers.remove(u, id, { branchId, writeOff: q.writeOff === 'true' });
+  }
+
+  /** Qarzni tahrirlash: mijoz qarzini yangi summaga o'rnatadi (farq `adjustment` bilan jurnalga yoziladi, kassaga tegmaydi). */
+  @Put(':id/debt')
+  @Perms('manage_users')
+  @BranchScoped()
+  setDebt(@CurrentUser() u: AuthUser, @BranchId() branchId: string, @Param('id', ParseUUIDPipe) id: string, @Body() dto: SetDebtDto) {
+    return this.customers.setDebt(u, branchId, id, dto);
   }
 
   /** Qo'lda qarz qo'shish (savdosiz): kassaga tegmaydi, qarz jurnaliga `adjustment` yoziladi. */

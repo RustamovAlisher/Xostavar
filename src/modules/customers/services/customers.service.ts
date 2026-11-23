@@ -9,7 +9,7 @@ import { page } from '../../../common/utils/pagination.js';
 import { assertVersion } from '../../../common/utils/version.js';
 import { AuditService } from '../../audit/services/audit.service.js';
 import { SettingsService } from '../../settings/services/settings.service.js';
-import type { CustomerDto, CustomerListQuery, ManualDebtDto } from '../dto/customers.dto.js';
+import type { CustomerDto, CustomerListQuery, ManualDebtDto, SetDebtDto } from '../dto/customers.dto.js';
 import { toCustomerView, type CustomerView } from '../mappers/customers.mapper.js';
 import { CustomersRepository, type CustomerInsert, type DebtLedgerInsert } from '../repositories/customers.repository.js';
 import { allocateDebt } from './debt-allocation.js';
@@ -89,15 +89,48 @@ export class CustomersService {
     return this.get(id);
   }
 
-  /** TZ 8.11: faqat qarzi 0 bo'lsa, yumshoq. */
-  async remove(user: AuthUser, id: string) {
+  /**
+   * Yumshoq o'chirish (TZ 8.11). Qarzi bor mijoz faqat `writeOff` bilan: qarz avval 0 ga tushiriladi —
+   * jurnalga `adjustment` (refType `customer_delete`) yoziladi va auditda summa ko'rsatiladi. Tarix saqlanadi.
+   */
+  async remove(user: AuthUser, id: string, opts: { branchId?: string; writeOff?: boolean } = {}) {
     await runTx(this.db, async (tx) => {
       const c = await this.repo.lockById(tx, id);
       if (!c) throw notFound('Mijoz');
-      if (c.totalDebt > 0) throw conflict('in_use', "Qarzi bor mijozni o'chirib bo'lmaydi");
+      let writtenOff = 0;
+      if (c.totalDebt > 0) {
+        if (!opts.writeOff || !opts.branchId) throw conflict('in_use', `Mijozning ${c.totalDebt.toLocaleString('ru-RU')} so'm qarzi bor — o'chirish uchun qarzni hisobdan chiqarishni tasdiqlang`);
+        const r = await this.applyDebt(tx, { customerId: id, branchId: opts.branchId, type: 'adjustment', amount: -c.totalDebt, refType: 'customer_delete', refId: randomUUID(), userId: user.id, note: "Mijoz o'chirildi — qarz hisobdan chiqarildi" });
+        writtenOff = -r.applied;
+      }
       await this.repo.softDelete(tx, id, c.phone);
-      await this.audit.log(user, { action: 'delete', module: 'Nasiya / Qarz', targetId: id, targetName: c.name, details: "Mijoz o'chirildi" }, tx);
+      await this.audit.log(user, {
+        action: 'delete', module: 'Nasiya / Qarz', targetId: id, targetName: c.name, branchId: opts.branchId,
+        details: writtenOff > 0 ? `Mijoz o'chirildi, ${writtenOff.toLocaleString('ru-RU')} so'm qarz hisobdan chiqarildi` : "Mijoz o'chirildi",
+        ...(writtenOff > 0 ? { diff: { before: { qarz: writtenOff }, after: { qarz: 0 } } } : {}),
+      }, tx);
     });
+  }
+
+  /** Qarzni tahrirlash: umumiy qarzni `dto.amount` ga o'rnatadi. Farq (+/−) `adjustment` (refType `manual_edit`) bilan yoziladi. */
+  async setDebt(user: AuthUser, branchId: string, id: string, dto: SetDebtDto): Promise<CustomerView> {
+    const target = Math.round(dto.amount);
+    const note = dto.note?.trim() || null;
+    const rules = await this.settings.getRules();
+    await runTx(this.db, async (tx) => {
+      const c = await this.repo.lockById(tx, id);
+      if (!c) throw notFound('Mijoz');
+      const delta = target - c.totalDebt;
+      if (delta === 0) return;
+      const r = await this.applyDebt(tx, { customerId: id, branchId, type: 'adjustment', amount: delta, refType: 'manual_edit', refId: randomUUID(), userId: user.id, note: note ?? 'Qarz tahrirlandi' });
+      if (r.after > 0 && !c.dueDate) await this.repo.setDueDate(tx, id, addDays(todayISO(), rules.defaultCreditDays));
+      await this.audit.log(user, {
+        action: 'edit', module: 'Nasiya / Qarz', targetId: id, targetName: c.name, branchId,
+        details: `Qarz tahrirlandi: ${r.before.toLocaleString('ru-RU')} → ${r.after.toLocaleString('ru-RU')} so'm (${delta > 0 ? '+' : ''}${delta.toLocaleString('ru-RU')})${note ? `, sabab: ${note}` : ''}`,
+        diff: { before: { qarz: r.before }, after: { qarz: r.after } },
+      }, tx);
+    });
+    return this.get(id);
   }
 
   /* ───────── Qarz jurnali (sotuv va to'lov servisi chaqiradi) ───────── */
