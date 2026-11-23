@@ -15,7 +15,7 @@ import { InventoryService } from '../../inventory/services/inventory.service.js'
 import { SettingsService } from '../../settings/services/settings.service.js';
 import { ShiftsService } from '../../shifts/services/shifts.service.js';
 import type { DebtPaymentDto } from '../../customers/dto/customers.dto.js';
-import type { OwnUseDto, OwnUseListQuery, SaleDto, SalesListQuery } from '../dto/sales.dto.js';
+import type { EditSaleLineDto, OwnUseDto, OwnUseListQuery, SaleDto, SalesListQuery } from '../dto/sales.dto.js';
 import { toQuoteView, toSaleList, toSaleView, type QuotedLine, type QuoteWarning } from '../mappers/sales.mapper.js';
 import { SalesRepository } from '../repositories/sales.repository.js';
 
@@ -414,6 +414,76 @@ export class SalesService {
       await this.audit.log(user, {
         action: 'edit', module: 'Kassa', targetId: id, targetName: `Chek ${number} · ${s.customerName}`, branchId, requestId,
         details: `Mahsulot olib tashlandi: ${line.name}${line.variantName ? ` (${line.variantName})` : ''} ${Number(line.qty)} ${line.unit}, ${value.toLocaleString('ru-RU')} so'm; mijoz qarzi ${(-r.applied).toLocaleString('ru-RU')} so'mga kamaydi${reason ? `. Sabab: ${reason}` : ''}`,
+      }, tx);
+    });
+    return this.get(user, id);
+  }
+
+  /**
+   * Nasiya chekdagi mahsulot qatorini tahrirlash (miqdor va/yoki narx). Faqat ochiq qarzli chek, kesishsiz qator.
+   * Qoldiq farqi ombordan chiqadi (`sale`) yoki qaytadi (`sale_void`); chek summasi, foyda va mijoz qarzi farqcha o'zgaradi
+   * (qarz oshsa `sale_debt`, kamaysa `sale_void` — ikkalasi ham shu chekka bog'lanadi). Chegirma summasi o'zgarmaydi.
+   * Qarz kamayishi chekning qolgan qarzidan oshmaydi (mijoz to'lagan pul qaytarilmaydi — buning uchun chekni bekor qiling).
+   */
+  async editLine(user: AuthUser, branchId: string, id: string, lineId: string, dto: EditSaleLineDto, requestId?: string) {
+    await runTx(this.db, async (tx) => {
+      await this.repo.lockBranch(tx, branchId);
+      const s = await this.repo.lockById(tx, id);
+      if (!s) throw notFound('Chek');
+      if (s.branchId !== branchId) throw forbidden("Boshqa filial chekini o'zgartira olmaysiz", 'branch_forbidden');
+      if (s.type !== 'sale') throw unprocessable('validation_failed', 'Faqat sotuv chekidagi mahsulot tahrirlanadi');
+      if (s.status === 'voided') throw conflict('already_voided', 'Bu chek bekor qilingan');
+      if (!s.customerId || s.remainingDebt <= 0) throw unprocessable('validation_failed', 'Faqat nasiyali (qarzi bor) chekdagi mahsulot tahrirlanadi');
+      const line = (await this.repo.lines(tx, id)).find((l) => l.id === lineId);
+      if (!line) throw notFound('Chek qatori');
+      if (line.cuts?.length) throw unprocessable('validation_failed', "Kesib berilgan mahsulotni tahrirlab bo'lmaydi — olib tashlab, kassada qayta soting");
+
+      const rules = await this.settings.getRules(tx);
+      const unit = (await this.repo.units(tx)).find((u) => u.id === line.unit);
+      const prec = unit?.precision ?? 3;
+      const oldQty = Number(line.qty), oldBase = Number(line.baseQty), oldTotal = Number(line.lineTotal), oldPrice = Number(line.unitPrice);
+      const qty = Math.round(dto.qty * 10 ** prec) / 10 ** prec;
+      if (qty <= 0) throw unprocessable('validation_failed', "Miqdor 0 dan katta bo'lishi kerak");
+      const unitPrice = Math.round(dto.unitPrice ?? oldPrice);
+      const lineTotal = Math.round(unitPrice * qty);
+      const baseQty = qty4(oldQty > 0 ? (oldBase / oldQty) * qty : qty);
+      const delta = lineTotal - oldTotal;
+      const deltaBase = qty4(baseQty - oldBase);
+      if (delta === 0 && deltaBase === 0) return;
+      if (s.subtotal + delta < s.discountAmount || s.totalAmount + delta <= 0) throw unprocessable('validation_failed', "Chek summasi chegirmadan kichik bo'lib qoladi");
+
+      // Qulf tartibi: filial → chek → qoldiq → mijoz
+      const levels = await this.inventory.lockLevels(tx, branchId, [{ productId: line.productId, variantId: line.variantId }], true);
+      const lvl = levels.get(`${line.productId}|${line.variantId ?? ''}`)!;
+      if (deltaBase > 0 && deltaBase > lvl.stock + 1e-9 && !rules.allowNegativeStock) {
+        throw unprocessable('insufficient_stock', `${line.name}${line.variantName ? ` (${line.variantName})` : ''}: omborda ${lvl.stock}, qo'shimcha kerak ${deltaBase}`, { productId: line.productId, available: lvl.stock, requested: deltaBase });
+      }
+      const { left, number } = await this.customers.saleDebtLeft(tx, s.customerId, id);
+      if (delta < 0 && -delta > left) {
+        throw unprocessable('validation_failed', `Summa ${(-delta).toLocaleString('ru-RU')} so'mga kamayadi, chekning qolgan qarzi esa ${left.toLocaleString('ru-RU')} so'm — mijoz to'lagan pulni qaytarish uchun chekni bekor qiling`);
+      }
+      if (deltaBase !== 0) {
+        await this.inventory.applyMovement(tx, lvl, { branchId, productId: line.productId, variantId: line.variantId, type: deltaBase > 0 ? 'sale' : 'sale_void', qtyBase: -deltaBase, unit: line.unit, qtyUnit: qty4(oldQty - qty), costPerBase: lvl.costPrice, refType: 'sale', refId: id, userId: user.id });
+      }
+      let debtAfter = s.customerDebtAfter;
+      if (delta !== 0) {
+        const r = await this.customers.applyDebt(tx, { customerId: s.customerId, branchId, type: delta > 0 ? 'sale_debt' : 'sale_void', amount: delta, refType: 'sale', refId: id, userId: user.id });
+        debtAfter = r.after;
+      }
+      const cpb = line.costPerBase != null ? Number(line.costPerBase) : null;
+      const margin = Number(rules.estimatedMarginPct) / 100;
+      const costDelta = cpb != null ? deltaBase * cpb : delta * (1 - margin);
+      await this.repo.updateLine(tx, lineId, { qty, baseQty, unitPrice, lineTotal });
+      await this.repo.updateSale(tx, id, {
+        subtotal: s.subtotal + delta, totalAmount: s.totalAmount + delta, remainingDebt: s.remainingDebt + delta,
+        profit: Math.round(s.profit + delta - costDelta), customerDebtAfter: debtAfter,
+      });
+      await this.shifts.refreezeIfClosed(tx, s.shiftId);
+      const u = unit?.short ?? line.unit;
+      await this.audit.log(user, {
+        action: 'edit', module: 'Kassa', targetId: id, targetName: `Chek ${number} · ${s.customerName}`, branchId, requestId,
+        details: `Mahsulot tahrirlandi: ${line.name}${line.variantName ? ` (${line.variantName})` : ''} ${oldQty} ${u} × ${oldPrice.toLocaleString('ru-RU')} → ${qty} ${u} × ${unitPrice.toLocaleString('ru-RU')}; mijoz qarzi ${delta >= 0 ? '+' : ''}${delta.toLocaleString('ru-RU')} so'm${dto.reason?.trim() ? `. Sabab: ${dto.reason.trim()}` : ''}`,
+        diff: { before: { qty: oldQty, narx: oldPrice, summa: oldTotal }, after: { qty, narx: unitPrice, summa: lineTotal } },
       }, tx);
     });
     return this.get(user, id);

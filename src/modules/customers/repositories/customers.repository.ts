@@ -142,6 +142,8 @@ export class CustomersRepository {
     return tx.select({
       saleId: saleLines.saleId, id: saleLines.id, name: saleLines.name, variantName: saleLines.variantName, sku: saleLines.sku, unit: saleLines.unit,
       qty: saleLines.qty, unitPrice: saleLines.unitPrice, lineTotal: saleLines.lineTotal,
+      // Kesib berilgan qator — profilda tahrirlash o'chiq (faqat olib tashlash)
+      hasCuts: sql<boolean>`coalesce(jsonb_array_length(${saleLines.cuts}), 0) > 0`,
     }).from(saleLines).where(inArray(saleLines.saleId, saleIds)).orderBy(asc(saleLines.sortOrder));
   }
 

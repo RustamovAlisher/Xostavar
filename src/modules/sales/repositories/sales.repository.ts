@@ -108,6 +108,10 @@ export class SalesRepository {
       .orderBy(desc(lines));
   }
 
+  updateLine(tx: DbOrTx, lineId: string, set: Partial<typeof saleLines.$inferInsert>) {
+    return tx.update(saleLines).set(set).where(eq(saleLines.id, lineId));
+  }
+
   deleteLine(tx: DbOrTx, lineId: string) {
     return tx.delete(saleLines).where(eq(saleLines.id, lineId));
   }

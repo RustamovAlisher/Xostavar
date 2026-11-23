@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto';
 import { INestApplication } from '@nestjs/common';
 import { as, code, createApp, ensureShift, makeProduct, seeded, uniq, type Client, type Seeded, today as todayStr } from './helpers.js';
 
@@ -304,6 +305,41 @@ describe('sales (TZ 8, 9.6, 20)', () => {
       const log = (await c.get('/audit-logs?module=Kassa&pageSize=1')).body.items[0];
       expect(log.details).toMatch(/Mahsulot olib tashlandi/);
       expect(log.details).toMatch(/146\s250 so'm/);
+    });
+    it("nasiya chekdagi mahsulotni tahrirlash (PATCH /sales/:id/lines/:lineId): miqdor/narx, qoldiq, chek, foyda va qarz farqcha o'zgaradi", async () => {
+      const cu = (await c.post('/customers', { name: 'Tahrir Mijoz', phone: phone(), creditLimit: 5_000_000 }, { idem: false })).body;
+      const stock0 = (await c.get(`/products/${cement.id}`)).body.stock;
+      const sale = await c.post('/sales', { lines: [{ productId: cement.id, unit: 'bag', qty: 2 }], customerId: cu.id, onCredit: true });
+      expect(sale.status).toBe(201);
+      const line = sale.body.lines[0];
+      const price = line.unitPrice;
+      const kassir = await as(app, 'kassir');
+      expect((await kassir.at(branch).patch(`/sales/${sale.body.id}/lines/${line.id}`, { qty: 3 })).status).toBe(403);
+      // miqdor oshadi: ombordan yana 1 qop chiqadi, qarz +1 qop narxi
+      const up = await c.patch(`/sales/${sale.body.id}/lines/${line.id}`, { qty: 3, reason: "mijoz yana oldi" });
+      expect(up.status).toBe(200);
+      expect(up.body).toMatchObject({ totalAmount: price * 3, subtotal: price * 3, remainingDebt: price * 3 });
+      expect(up.body.lines[0]).toMatchObject({ qty: 3, lineTotal: price * 3 });
+      expect((await c.get(`/products/${cement.id}`)).body.stock).toBe(stock0 - 3);
+      expect((await c.get(`/customers/${cu.id}`)).body.totalDebtUZS).toBe(price * 3);
+      // narx va miqdor kamayadi
+      const down = await c.patch(`/sales/${sale.body.id}/lines/${line.id}`, { qty: 1, unitPrice: price - 5000 });
+      expect(down.body).toMatchObject({ totalAmount: price - 5000, remainingDebt: price - 5000 });
+      expect((await c.get(`/products/${cement.id}`)).body.stock).toBe(stock0 - 1);
+      expect((await c.get(`/customers/${cu.id}`)).body.totalDebtUZS).toBe(price - 5000);
+      const prof = (await c.get(`/customers/${cu.id}/profile`)).body;
+      expect(prof.sales[0].debt).toMatchObject({ outstanding: price - 5000 });
+      const log = (await c.get('/audit-logs?module=Kassa&pageSize=1')).body.items[0];
+      expect(log.details).toMatch(/Mahsulot tahrirlandi/);
+      // mijoz shu chek uchun to'lagan: qarzdan ko'p kamaytirib bo'lmaydi
+      await c.post(`/customers/${cu.id}/payments`, { amount: price - 15000, methodId: s.methods.cash, saleId: sale.body.id });
+      expect(code(await c.patch(`/sales/${sale.body.id}/lines/${line.id}`, { qty: 1, unitPrice: 1000 }))).toBe('validation_failed');
+      // validatsiya
+      expect((await c.patch(`/sales/${sale.body.id}/lines/${line.id}`, { qty: 0 })).status).toBe(400);
+      expect((await c.patch(`/sales/${sale.body.id}/lines/${randomUUID()}`, { qty: 1 })).status).toBe(404);
+      // qarzsiz (to'liq to'langan) chekdagi qatorni tahrirlab bo'lmaydi
+      const paidSale = await c.post('/sales', { lines: [{ productId: cement.id, unit: 'bag', qty: 1 }], payments: cash(price) });
+      expect(code(await c.patch(`/sales/${paidSale.body.id}/lines/${paidSale.body.lines[0].id}`, { qty: 2 }))).toBe('validation_failed');
     });
     it("nasiya chekdan mahsulot: mijoz chek uchun to'lagan bo'lsa va summa qolgan qarzdan katta — rad; qarzsiz chek — rad", async () => {
       const cu = (await c.post('/customers', { name: 'Qator Mijoz 2', phone: phone(), creditLimit: 1_000_000 }, { idem: false })).body;

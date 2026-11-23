@@ -49,6 +49,13 @@ export class RemoveSaleLineDto {
   @IsOptional() @IsString() @MaxLength(300) reason?: string;
 }
 
+/** Nasiya chekdagi mahsulot qatorini tahrirlash: yangi miqdor (shu birlikda) va ixtiyoriy yangi narx (shu birlik uchun). */
+export class EditSaleLineDto {
+  @IsNumber() @Min(0.0001) qty: number;
+  @ApiPropertyOptional({ description: "Yangi narx (shu birlik uchun, so'm). Berilmasa eski narx qoladi" }) @IsOptional() @IsNumber() @Min(1) unitPrice?: number;
+  @IsOptional() @IsString() @MaxLength(300) reason?: string;
+}
+
 export class SalesListQuery extends PageQuery {
   @IsOptional() @IsString() from?: string;
   @IsOptional() @IsString() to?: string;

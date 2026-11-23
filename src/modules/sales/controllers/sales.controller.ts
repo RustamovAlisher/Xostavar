@@ -1,8 +1,8 @@
-import { Body, Controller, Get, HttpCode, Param, ParseUUIDPipe, Post, Query } from '@nestjs/common';
+import { Body, Controller, Get, HttpCode, Param, ParseUUIDPipe, Patch, Post, Query } from '@nestjs/common';
 import { ApiBearerAuth, ApiTags } from '@nestjs/swagger';
 import { BranchId, BranchScoped, CurrentUser, Perms, Req, requestIdOf, type AuthRequest, type AuthUser } from '../../../common/decorators/auth-context.js';
 import { Idempotent } from '../../../common/interceptors/idempotency.interceptor.js';
-import { OwnUseDto, OwnUseListQuery, RemoveSaleLineDto, SaleDto, SalesListQuery, VoidSaleDto } from '../dto/sales.dto.js';
+import { EditSaleLineDto, OwnUseDto, OwnUseListQuery, RemoveSaleLineDto, SaleDto, SalesListQuery, VoidSaleDto } from '../dto/sales.dto.js';
 import { SalesService } from '../services/sales.service.js';
 
 @ApiTags('sales')
@@ -83,5 +83,12 @@ export class SalesController {
   @Idempotent()
   removeLine(@CurrentUser() u: AuthUser, @BranchId() branchId: string, @Req() req: AuthRequest, @Param('id', ParseUUIDPipe) id: string, @Param('lineId', ParseUUIDPipe) lineId: string, @Body() dto: RemoveSaleLineDto) {
     return this.sales.removeLine(u, branchId, id, lineId, dto.reason?.trim() || '', requestIdOf(req));
+  }
+
+  /** Nasiya chekdagi mahsulotni tahrirlash (miqdor/narx): qoldiq farqi ombordan chiqadi yoki qaytadi, chek summasi va mijoz qarzi farqcha o'zgaradi. */
+  @Patch(':id/lines/:lineId')
+  @Perms('void_sale')
+  editLine(@CurrentUser() u: AuthUser, @BranchId() branchId: string, @Req() req: AuthRequest, @Param('id', ParseUUIDPipe) id: string, @Param('lineId', ParseUUIDPipe) lineId: string, @Body() dto: EditSaleLineDto) {
+    return this.sales.editLine(u, branchId, id, lineId, dto, requestIdOf(req));
   }
 }
