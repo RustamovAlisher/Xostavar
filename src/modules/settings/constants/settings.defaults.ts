@@ -162,15 +162,15 @@ export const DEFAULT_SETTINGS = {
 export const ALL_PERMISSIONS = [
   'view_pos', 'view_inventory', 'view_analytics', 'view_debts', 'view_audit_logs', 'view_users',
   'add_product', 'edit_product', 'delete_product', 'stock_in', 'give_debt', 'view_cost_price', 'view_expenses', 'manage_expenses',
-  'view_all_sales', 'void_sale',
+  'view_all_sales', 'view_totals', 'void_sale',
   'manage_users', 'manage_branches', 'manage_settings',
 ];
 
 /** Standart rollar — frontend `DEFAULT_ROLES` bilan bir xil; "Super Admin" = Egasi (all_branches). */
 export const DEFAULT_ROLES = [
   { name: 'Super Admin', allBranches: true, permissions: ALL_PERMISSIONS },
-  { name: 'Filial admini', allBranches: false, permissions: ['view_pos', 'view_inventory', 'view_analytics', 'view_debts', 'view_audit_logs', 'view_users', 'stock_in', 'give_debt', 'view_cost_price', 'view_expenses', 'manage_expenses', 'view_all_sales', 'void_sale', 'manage_users'] },
+  { name: 'Filial admini', allBranches: false, permissions: ['view_pos', 'view_inventory', 'view_analytics', 'view_debts', 'view_audit_logs', 'view_users', 'stock_in', 'give_debt', 'view_cost_price', 'view_expenses', 'manage_expenses', 'view_all_sales', 'view_totals', 'void_sale', 'manage_users'] },
   { name: 'Kassir', allBranches: false, permissions: ['view_pos', 'view_debts', 'give_debt'] },
   { name: 'Omborchi', allBranches: false, permissions: ['view_pos', 'view_inventory', 'add_product', 'edit_product', 'stock_in'] },
-  { name: 'Buxgalter', allBranches: false, permissions: ['view_pos', 'view_inventory', 'view_analytics', 'view_debts', 'view_audit_logs', 'view_cost_price', 'view_expenses', 'manage_expenses', 'view_all_sales'] },
+  { name: 'Buxgalter', allBranches: false, permissions: ['view_pos', 'view_inventory', 'view_analytics', 'view_debts', 'view_audit_logs', 'view_cost_price', 'view_expenses', 'manage_expenses', 'view_all_sales', 'view_totals'] },
 ];

@@ -562,6 +562,7 @@ export class SalesService {
     ]);
     const [lines, pays] = await this.repo.detailsMany(items.map((s) => s.id));
     // «O'zimga olingan» sotuv summasiga kirmaydi — alohida (Sotuvlar sahifasida «O'zimga» bo'limi)
-    return { ...page(toSaleList(items, lines, pays, this.withCost(user)), total, q), summary: { ...summary, ownUse } };
+    // Umumiy summalar (sotuv, kassaga tushgan, usullar bo'yicha) — faqat `view_totals` bilan; cheklar ro'yxati hammaga
+    return { ...page(toSaleList(items, lines, pays, this.withCost(user)), total, q), summary: user.permissions.includes('view_totals') ? { ...summary, ownUse } : null };
   }
 }

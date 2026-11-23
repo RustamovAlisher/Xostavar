@@ -92,4 +92,12 @@ describe('permissions matrix', () => {
     expect(sales).not.toMatch(/"profit":\d/);
     expect(sales).not.toMatch(/"costPerBase":\d/);
   });
+
+  it("view_totals: umumiy summalar (sotuv, kassaga tushgan, usullar) faqat shu huquq bilan; cheklar ro'yxati hammaga", async () => {
+    const kassir = (await s.kassir.get('/sales?pageSize=5')).body;
+    expect(kassir.items).toBeDefined();
+    expect(kassir.summary).toBeNull();
+    expect((await s.admin.get('/sales?pageSize=5')).body.summary).toMatchObject({ salesSum: expect.any(Number) });
+    expect((await s.buxgalter.get('/sales?pageSize=5')).body.summary).not.toBeNull();
+  });
 });

@@ -15,6 +15,7 @@ export const PERMISSIONS = [
   'view_expenses',
   'manage_expenses',
   'view_all_sales',
+  'view_totals',
   'void_sale',
   'manage_users',
   'manage_branches',
