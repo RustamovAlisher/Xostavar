@@ -7,6 +7,7 @@ import { qty4, todayISO } from '../../../common/utils/numbers.js';
 import { page } from '../../../common/utils/pagination.js';
 import { averageCost, editAverageCost, factorOf } from '../../../common/utils/pricing.js';
 import { AuditService } from '../../audit/services/audit.service.js';
+import { SuppliersService } from '../../suppliers/services/suppliers.service.js';
 import type { StockAdjustDto, StockInDto, StockInLineEditDto, StockInListQuery, StockLevelPatchDto } from '../dto/inventory.dto.js';
 import { displayName, levelKey, toLevelView, toLevelsAcrossBranches, toLockedLevel, toProductHistory, toReceiptList, toReceiptView, toTargets, type LockedLevel, type Target } from '../mappers/inventory.mapper.js';
 import { InventoryRepository, type LevelKey, type MovementType } from '../repositories/inventory.repository.js';
@@ -23,6 +24,7 @@ export class InventoryService {
     @Inject(DB) private readonly db: Db,
     private readonly repo: InventoryRepository,
     private readonly audit: AuditService,
+    private readonly suppliers: SuppliersService,
   ) {}
 
   /* ───────── Qulflash ───────── */
@@ -127,7 +129,12 @@ export class InventoryService {
         supplierId = sup.id;
         supplierName = sup.name;
       }
-      const r = await this.repo.insertReceipt(tx, { branchId, number: next, supplierId, supplierName, invoice: dto.invoice?.trim() || null, date: dto.date ?? todayISO(), userId: user.id, userName: user.name, note: dto.note?.trim() || null, totalCost: calc.reduce((a, c) => a + c.totalCost, 0) });
+      const totalCost = calc.reduce((a, c) => a + c.totalCost, 0);
+      if (dto.paidAmount != null) {
+        if (dto.paidAmount > totalCost) throw unprocessable('validation_failed', `To'langan summa kirim jamidan katta (${totalCost.toLocaleString('ru-RU')} so'm)`);
+        if (dto.paidAmount < totalCost && !supplierId) throw unprocessable('validation_failed', "Qarzga olish uchun yetkazib beruvchini tanlang");
+      }
+      const r = await this.repo.insertReceipt(tx, { branchId, number: next, supplierId, supplierName, invoice: dto.invoice?.trim() || null, date: dto.date ?? todayISO(), userId: user.id, userName: user.name, note: dto.note?.trim() || null, totalCost, paidAmount: dto.paidAmount ?? null });
       for (const c of calc) {
         const lvl = levels.get(levelKey(c.l))!;
         const newCost = averageCost(lvl.stock, lvl.costPrice, c.qtyBase, c.costPerBase);
@@ -144,6 +151,7 @@ export class InventoryService {
           details: `Kirim №${r.number} (${b.name}): +${c.qty} ${short}, tannarx ${c.costPerUnit.toLocaleString('ru-RU')} so'm/${short}${supplierName ? ` (${supplierName})` : ''}${dto.invoice ? `, hujjat ${dto.invoice}` : ''}`,
         }, tx);
       }
+      await this.suppliers.syncReceiptDebt(tx, user.id, r.id);
       return r.id;
     });
     return this.getReceipt(receiptId);
@@ -192,10 +200,12 @@ export class InventoryService {
         await this.repo.incrementStock(tx, lvl.id, 0, newCost);
       }
       await this.repo.updateReceiptLine(tx, line.id, { unit, qty, qtyBase, costPerUnit, costPerBase: qty4(costPerBase), totalCost: Math.round(qty * costPerUnit) });
+      const newSupplier = dto.supplierName !== undefined && dto.supplierName.trim() ? await this.repo.ensureSupplier(tx, dto.supplierName.trim()) : null;
       await this.repo.updateReceiptHead(tx, receipt.id, {
-        ...(dto.supplierName !== undefined ? { supplierName: dto.supplierName.trim() ? (await this.repo.ensureSupplier(tx, dto.supplierName.trim())).name : null } : {}),
+        ...(dto.supplierName !== undefined ? { supplierName: newSupplier?.name ?? null, supplierId: newSupplier?.id ?? null } : {}),
         ...(dto.invoice !== undefined ? { invoice: dto.invoice.trim() || null } : {}),
       });
+      await this.suppliers.syncReceiptDebt(tx, user.id, receipt.id); // jami yoki yetkazib beruvchi o'zgargan bo'lsa qarz moslanadi
 
       const units = await this.repo.allUnits(tx);
       const oldShort = units.find((u) => u.id === line.unit)?.short ?? line.unit;
@@ -243,8 +253,13 @@ export class InventoryService {
       const newCost = editAverageCost(lvl.stock, lvl.costPrice, oldBase, oldCpb, 0, 0);
       await this.applyMovement(tx, lvl, { branchId, productId: line.productId, variantId: line.variantId, type: 'stock_in', qtyBase: -oldBase, unit: line.unit, qtyUnit: -Number(line.qty), costPerBase: oldCpb, refType: 'stock_receipt_delete', refId: receipt.id, userId: user.id, newCost });
       await this.repo.deleteReceiptLine(tx, line.id);
-      if ((await this.repo.receiptLines(receipt.id, tx)).length === 0) await this.repo.deleteReceipt(tx, receipt.id);
-      else await this.repo.updateReceiptHead(tx, receipt.id, {});
+      if ((await this.repo.receiptLines(receipt.id, tx)).length === 0) {
+        await this.suppliers.syncReceiptDebt(tx, user.id, receipt.id, { zero: true }); // hujjat o'chadi — qarzi ham bekor
+        await this.repo.deleteReceipt(tx, receipt.id);
+      } else {
+        await this.repo.updateReceiptHead(tx, receipt.id, {});
+        await this.suppliers.syncReceiptDebt(tx, user.id, receipt.id);
+      }
       const short = (await this.repo.allUnits(tx)).find((u) => u.id === line.unit)?.short ?? line.unit;
       await this.audit.log(user, {
         action: 'delete', module: 'Mahsulotlar', targetId: line.productId, targetName: line.productName, branchId, requestId,

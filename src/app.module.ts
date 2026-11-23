@@ -16,6 +16,7 @@ import { InventoryModule } from './modules/inventory/inventory.module.js';
 import { CustomersModule } from './modules/customers/customers.module.js';
 import { SalesModule } from './modules/sales/sales.module.js';
 import { ExpensesModule } from './modules/expenses/expenses.module.js';
+import { SuppliersModule } from './modules/suppliers/suppliers.module.js';
 import { ReportsModule } from './modules/reports/reports.module.js';
 import { SettingsModule } from './modules/settings/settings.module.js';
 import { ShiftsModule } from './modules/shifts/shifts.module.js';
@@ -61,6 +62,7 @@ import { TelegramModule } from './modules/telegram/telegram.module.js';
     CustomersModule,
     SalesModule,
     ExpensesModule,
+    SuppliersModule,
     ReportsModule,
   ],
   providers: [

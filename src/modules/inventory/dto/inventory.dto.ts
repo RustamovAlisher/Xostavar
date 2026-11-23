@@ -16,6 +16,7 @@ export class StockInDto {
   @IsOptional() @IsUUID() supplierId?: string;
   @IsOptional() @IsString() @MaxLength(120) supplierName?: string;
   @IsOptional() @IsString() @MaxLength(60) invoice?: string;
+  @ApiPropertyOptional({ description: "Kirim paytida to'langan summa, so'm. Berilsa qarz hisobi yuritiladi: qarz = jami − to'langan (qarz uchun yetkazib beruvchi kerak). Berilmasa qarz hisobi yuritilmaydi." }) @IsOptional() @IsInt() @Min(0) paidAmount?: number;
   @IsOptional() @Matches(/^\d{4}-\d{2}-\d{2}$/) date?: string;
   @IsOptional() @IsString() @MaxLength(500) note?: string;
   @IsArray() @ArrayMinSize(1) @ArrayMaxSize(200) @ValidateNested({ each: true }) @Type(() => StockInLineDto) lines: StockInLineDto[];

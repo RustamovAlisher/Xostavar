@@ -207,11 +207,11 @@ export class InventoryRepository {
   }
 
   /** Hujjat jami qatorlardan qayta hisoblanadi; yetkazib beruvchi / hujjat raqami ixtiyoriy yangilanadi. */
-  updateReceiptHead(tx: DbOrTx, receiptId: string, v: { supplierName?: string | null; invoice?: string | null }) {
+  updateReceiptHead(tx: DbOrTx, receiptId: string, v: { supplierName?: string | null; supplierId?: string | null; invoice?: string | null }) {
     const set: Record<string, unknown> = {
       totalCost: sql`(select coalesce(sum(${stockReceiptLines.totalCost}), 0) from ${stockReceiptLines} where ${stockReceiptLines.receiptId} = ${receiptId})`,
     };
-    if (v.supplierName !== undefined) { set.supplierName = v.supplierName; set.supplierId = null; }
+    if (v.supplierName !== undefined) { set.supplierName = v.supplierName; set.supplierId = v.supplierId ?? null; }
     if (v.invoice !== undefined) set.invoice = v.invoice;
     return tx.update(stockReceipts).set(set).where(eq(stockReceipts.id, receiptId));
   }

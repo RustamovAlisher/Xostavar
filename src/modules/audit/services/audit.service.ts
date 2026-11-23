@@ -11,7 +11,7 @@ export type { AuditLogRow } from '../repositories/audit.repository.js';
 export type AuditAction =
   | 'add' | 'edit' | 'delete' | 'stock_in' | 'stock_adjust' | 'sale' | 'sale_void' | 'debt_payment' | 'user_update'
   | 'shift_open' | 'shift_close' | 'expense' | 'settings_reset' | 'password_reset' | 'login_failed';
-export type AuditModule = 'Mahsulotlar' | 'Kassa' | 'Nasiya / Qarz' | 'Xodimlar' | 'Filiallar' | 'Sozlamalar' | 'Xarajatlar' | 'Xavfsizlik';
+export type AuditModule = 'Mahsulotlar' | 'Kassa' | 'Nasiya / Qarz' | 'Xodimlar' | 'Filiallar' | 'Sozlamalar' | 'Xarajatlar' | 'Xavfsizlik' | 'Yetkazib beruvchilar';
 
 export interface AuditEntry {
   action: AuditAction;

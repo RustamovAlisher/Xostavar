@@ -74,6 +74,7 @@ customers   mijozlar, qarz jurnali
 shifts      smena, Z-hisobot jamlari
 sales       quote, sotuv (aralash to'lov, nasiya, kesim), storno, qarz to'lovi
 expenses    xarajatlar, kassadan chiqim
+suppliers   yetkazib beruvchilar: kirim qarzga olish, to'lovlar, qo'lda qarz, qarz jurnali
 reports     dashboard, revenue, products, cashiers, payments, debts, P&L, cash-flow
 audit       audit jurnali (jadval + info log)
 health      /health
@@ -102,6 +103,7 @@ Integratsiya testlari har yurishda test bazasini tozalab (`drop schema` → migr
 | `shifts` | bitta ochiq smena, egalik, Z-hisobot, `require_shift` |
 | `sales` | quote, oddiy/aralash/nasiya sotuv, limit, chegirma chegarasi, kesim, chek raqami, idempotentlik, storno, qarz to'lovi, ro'yxat |
 | `expenses` | kassadan chiqim va smena, huquqlar, ro'yxat |
+| `suppliers` | qarzga kirim (to'langan summa), to'lov, FIFO taqsimot, kirim tahrirlansa qarz moslanishi, huquqlar |
 | `reports` | dashboard va barcha hisobotlar aniq raqamlar bilan |
 | `audit` | filtrlar, filial doirasi, umumiy amallar |
 | `permissions` | huquqlar matritsasi: har endpoint ruxsatsiz rolda 403 |

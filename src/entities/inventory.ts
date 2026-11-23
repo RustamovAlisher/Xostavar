@@ -71,6 +71,11 @@ export const stockReceipts = pgTable(
     userName: text('user_name').notNull(),
     note: text('note'),
     totalCost: qty('total_cost').notNull().default(0),
+    /** Kirim paytida to'langan summa. null = qarz hisobi yuritilmagan (eski kirimlar, qarzsiz kirim). */
+    paidAmount: money('paid_amount'),
+    /** Shu kirimdan hisobga olingan qarz (hosila: max(0, jami − to'langan)) va u yozilgan yetkazib beruvchi. */
+    debtAmount: money('debt_amount').notNull().default(0),
+    debtSupplierId: uuid('debt_supplier_id').references(() => suppliers.id, { onDelete: 'set null' }),
     createdAt: createdAt(),
   },
   (t) => [uniqueIndex('stock_receipts_branch_number_uq').on(t.branchId, t.number), index('stock_receipts_branch_date_idx').on(t.branchId, t.date)],

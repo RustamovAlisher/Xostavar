@@ -1,9 +1,9 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { and, asc, eq, inArray, isNull, notInArray, sql } from 'drizzle-orm';
+import { and, asc, eq, inArray, isNull, ne, notInArray, or, sql } from 'drizzle-orm';
 import { DB, type Db, type DbOrTx } from '../../../db/db.module.js';
 import {
   businessRules, categories, customerGroups, customers, expenseCategories, expenses, paymentMethods, products,
-  saleLines, salePayments, sizePresets, stockReceiptLines, storeSettings, suppliers, unitConversions, units,
+  saleLines, salePayments, sizePresets, stockReceiptLines, storeSettings, supplierLedger, suppliers, unitConversions, units,
 } from '../../../entities/index.js';
 
 export type StoreSettingsRow = typeof storeSettings.$inferSelect;
@@ -184,6 +184,11 @@ export class SettingsRepository {
   }
 
   /** O'chirilayotgan kategoriyalarda (storno qilinmagan) xarajat bormi. */
+  /** Qarzi bor yoki qarz jurnali yozilgan yetkazib beruvchi nomi (o'chirishni to'sadi); yo'q bo'lsa null. */
+  supplierWithDebtIn(tx: DbOrTx, ids: string[]): Promise<string | null> {
+    return tx.select({ name: suppliers.name }).from(suppliers).where(and(inArray(suppliers.id, ids), or(ne(suppliers.totalDebt, 0), sql`exists (select 1 from ${supplierLedger} where ${supplierLedger.supplierId} = ${suppliers.id})`))).limit(1).then((r) => r[0]?.name ?? null);
+  }
+
   expenseInCategories(tx: DbOrTx, categoryIds: string[]): Promise<boolean> {
     return tx.select({ id: expenses.id }).from(expenses).where(and(inArray(expenses.categoryId, categoryIds), isNull(expenses.voidedAt))).limit(1).then((r) => r.length > 0);
   }

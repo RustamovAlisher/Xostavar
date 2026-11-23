@@ -124,6 +124,8 @@ export const suppliers = pgTable(
     name: text('name').notNull(),
     phone: text('phone'),
     note: text('note'),
+    /** Hosila: bizning shu yetkazib beruvchiga qarzimiz (so'm) — har doim oxirgi supplier_ledger.balance_after ga teng. Manfiy = avans. */
+    totalDebt: money('total_debt').notNull().default(0),
     createdAt: createdAt(),
   },
   (t) => [uniqueIndex('suppliers_name_lower_uq').on(sqlLower(t.name))],

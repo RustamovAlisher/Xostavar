@@ -7,6 +7,7 @@ export * from './inventory.js';
 export * from './customers.js';
 export * from './sales.js';
 export * from './expenses.js';
+export * from './suppliers.js';
 export * from './audit.js';
 export * from './currency.js';
 export * from './telegram.js';

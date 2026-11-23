@@ -71,7 +71,10 @@ export class SettingsService implements OnModuleInit {
         return c ? `"${c}" mijozi shu guruhda` : null;
       });
       await this.savePaymentMethods(tx, dto);
-      await this.saveNamed(tx, 'suppliers', dto.suppliers, 'Yetkazib beruvchi', async () => null, (d) => ({ phone: d.phone?.trim() || null, note: d.note?.trim() || null }));
+      await this.saveNamed(tx, 'suppliers', dto.suppliers, 'Yetkazib beruvchi', async (ids) => {
+        const s = await this.repo.supplierWithDebtIn(tx, ids);
+        return s ? `"${s}" bilan qarz hisobi bor` : null;
+      }, (d) => ({ phone: d.phone?.trim() || null, note: d.note?.trim() || null }));
       await this.saveNamed(tx, 'expenseCategories', dto.expenseCategories, 'Xarajat kategoriyasi', async (ids) => ((await this.repo.expenseInCategories(tx, ids)) ? 'xarajat yozuvlari bor' : null), (d) => ({ active: d.active ?? true }));
       const s = dto.store;
       await this.repo.upsertStore(tx, { name: s.name.trim(), subtitle: s.subtitle ?? '', address: s.address ?? '', phone: s.phone ?? '', taxId: s.taxId ?? '', receiptFooter: s.receiptFooter ?? '', printFormat: s.printFormat ?? 'thermal', paperWidthMm: s.paperWidthMm ?? 80 });
