@@ -14,8 +14,14 @@ export type ShiftRow = typeof shifts.$inferSelect;
 export class ShiftsRepository {
   constructor(@Inject(DB) private readonly db: Db) {}
 
-  findOpen(branchId: string, tx: DbOrTx = this.db) {
-    return tx.select().from(shifts).where(and(eq(shifts.branchId, branchId), isNull(shifts.closedAt))).limit(1).then((r) => r[0] ?? null);
+  /** Xodimning shu filialdagi ochiq smenasi. */
+  findOpenOf(branchId: string, userId: string, tx: DbOrTx = this.db) {
+    return tx.select().from(shifts).where(and(eq(shifts.branchId, branchId), eq(shifts.openedBy, userId), isNull(shifts.closedAt))).limit(1).then((r) => r[0] ?? null);
+  }
+
+  /** Filialdagi barcha ochiq smenalar (eskisi birinchi). */
+  listOpen(branchId: string, tx: DbOrTx = this.db) {
+    return tx.select().from(shifts).where(and(eq(shifts.branchId, branchId), isNull(shifts.closedAt))).orderBy(shifts.openedAt);
   }
 
   findById(id: string, tx: DbOrTx = this.db) {

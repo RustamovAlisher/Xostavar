@@ -1,0 +1,2 @@
+DROP INDEX "shifts_one_open_per_branch_uq";--> statement-breakpoint
+CREATE UNIQUE INDEX "shifts_one_open_per_user_branch_uq" ON "shifts" USING btree ("branch_id","opened_by") WHERE "shifts"."closed_at" is null;

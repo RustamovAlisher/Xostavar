@@ -54,7 +54,7 @@ export class AuthController {
   @ApiBearerAuth()
   async me(@CurrentUser() user: AuthUser, @Req() req: AuthRequest) {
     const branchId = (req.headers['x-branch-id'] as string | undefined) || user.defaultBranchId;
-    const shift = branchId && (user.allBranches || user.branchIds.includes(branchId)) ? await this.shifts.current(branchId) : null;
+    const shift = branchId && (user.allBranches || user.branchIds.includes(branchId)) ? await this.shifts.current(branchId, user.id) : null;
     return { user, shift };
   }
 

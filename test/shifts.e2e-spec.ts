@@ -24,20 +24,37 @@ describe('shifts (TZ 7.7, 8.9, 9.7)', () => {
     expect((await c.post('/shifts/open', { openingCash: -5 })).status).toBe(400);
   });
 
-  it('boshqa xodim ochgan smenada sotish 403 shift_owned_by_other; yopishni ochgan xodim yoki manage_users', async () => {
-    // kassir main filialda: admin ochgan smena bo'lsa sota olmaydi
+  it("har kassirning o'z smenasi: admin smenasi ochiq bo'lsa ham kassir o'zinikini ochadi va sotadi; bir xodimda ikkinchi smena 409; boshqaning smenasini faqat manage_users shiftId bilan yopadi", async () => {
     const main = s.admin;
     const cur = await main.get('/shifts/current');
     if (cur.body?.id) await main.post('/shifts/close', {});
-    await main.post('/shifts/open', { openingCash: 0 });
+    const kcur = await s.kassir.get('/shifts/current');
+    if (kcur.body?.id) await s.kassir.post('/shifts/close', {});
+    const adminShift = (await main.post('/shifts/open', { openingCash: 0 })).body;
     const p = await makeProduct(main, s, { stock: 5, price: 1000 });
-    const r = await s.kassir.post('/sales', { lines: [{ productId: p.id, unit: 'piece', qty: 1 }], payments: [{ methodId: s.methods.cash, amount: 1000 }] });
-    expect(code(r)).toBe('shift_owned_by_other');
-    expect(code(await s.kassir.post('/shifts/close', {}))).toBe('shift_owned_by_other');
-    expect((await main.post('/shifts/close', {})).status).toBe(201);
-    // Endi kassir ochadi, admin (manage_users) yopa oladi
-    await s.kassir.post('/shifts/open', {});
-    expect((await s.kassir.post('/sales', { lines: [{ productId: p.id, unit: 'piece', qty: 1 }], payments: [{ methodId: s.methods.cash, amount: 1000 }] })).status).toBe(201);
+    const sell = () => s.kassir.post('/sales', { lines: [{ productId: p.id, unit: 'piece', qty: 1 }], payments: [{ methodId: s.methods.cash, amount: 1000 }] });
+    // kassirning o'z smenasi yo'q — sota olmaydi, o'zinikini ochadi (admin smenasi xalaqit bermaydi)
+    expect((await s.kassir.get('/shifts/current')).body?.id).toBeUndefined();
+    expect(code(await sell())).toBe('shift_required');
+    const mine = await s.kassir.post('/shifts/open', {});
+    expect(mine.status).toBe(201);
+    expect(code(await s.kassir.post('/shifts/open', {}))).toBe('in_use');
+    const sale = await sell();
+    expect(sale.status).toBe(201);
+    expect(sale.body.shiftId).toBe(mine.body.id); // chek kassirning o'z smenasiga yoziladi
+    expect((await main.get('/shifts/current')).body.totals.receipts).toBe(0);
+    expect((await s.kassir.get('/shifts/current')).body.totals.receipts).toBe(1);
+    // ochiq smenalar ro'yxati — faqat manage_users; kassir boshqaning smenasini yopa olmaydi
+    expect((await s.kassir.get('/shifts/open')).status).toBe(403);
+    const open = (await main.get('/shifts/open')).body as { id: string }[];
+    expect(open.map((x) => x.id)).toEqual(expect.arrayContaining([adminShift.id, mine.body.id]));
+    expect(code(await s.kassir.post('/shifts/close', { shiftId: adminShift.id }))).toBe('shift_owned_by_other');
+    // administrator kassirning unutilgan smenasini yopadi; yopilganini qayta yopib bo'lmaydi
+    const closed = await main.post('/shifts/close', { shiftId: mine.body.id });
+    expect(closed.status).toBe(201);
+    expect(closed.body.totals.receipts).toBe(1);
+    expect((await main.post('/shifts/close', { shiftId: mine.body.id })).status).toBe(404);
+    expect((await s.kassir.get('/shifts/current')).body?.id).toBeUndefined();
     expect((await main.post('/shifts/close', {})).status).toBe(201);
   });
 

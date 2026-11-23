@@ -10,7 +10,7 @@ import { ShiftsRepository } from '../repositories/shifts.repository.js';
 
 export type { ShiftTotals } from '../mappers/shifts.mapper.js';
 
-/** Smenalar (TZ 7.7, 9.5): filialda bir vaqtda bitta ochiq smena; yopishda jamlar muzlatiladi. */
+/** Smenalar (TZ 7.7, 9.5): har kassirning o'z smenasi (bir xodimda bitta ochiq smena); yopishda jamlar muzlatiladi. */
 @Injectable()
 export class ShiftsService {
   constructor(
@@ -19,8 +19,14 @@ export class ShiftsService {
     private readonly audit: AuditService,
   ) {}
 
-  current(branchId: string, tx?: DbOrTx) {
-    return this.repo.findOpen(branchId, tx);
+  /** Xodimning shu filialdagi ochiq smenasi (kassa, kassadan chiqim, smena holati). */
+  current(branchId: string, userId: string, tx?: DbOrTx) {
+    return this.repo.findOpenOf(branchId, userId, tx);
+  }
+
+  /** Filialdagi barcha ochiq smenalar (administrator unutilgan smenani yopishi uchun). */
+  listOpen(branchId: string) {
+    return this.repo.listOpen(branchId);
   }
 
   /**
@@ -28,18 +34,18 @@ export class ShiftsService {
    * Tranzaksiya ichida chaqiriladi; ochiq smena id sini qaytaradi (bo'lmasa null).
    */
   async requireForSale(tx: DbOrTx, user: AuthUser, branchId: string, allowAdmin = false): Promise<string | null> {
-    const [required, s] = await Promise.all([this.repo.requireShiftRule(tx), this.repo.findOpen(branchId, tx)]);
-    if (!required) return s?.id ?? null;
-    if (!s) throw unprocessable('shift_required', 'Avval smenani oching');
-    if (s.openedBy !== user.id && !(allowAdmin && user.permissions.includes('manage_users'))) {
-      throw forbidden(`Smena ${s.openedByName} nomida ochilgan`, 'shift_owned_by_other');
-    }
-    return s.id;
+    const [required, own] = await Promise.all([this.repo.requireShiftRule(tx), this.repo.findOpenOf(branchId, user.id, tx)]);
+    if (own) return own.id;
+    // O'z smenasi yo'q: administrator (qarz to'lovi) filialdagi boshqa ochiq smenaga yozishi mumkin; smena talab qilinmasa — shunday ham.
+    const other = allowAdmin && user.permissions.includes('manage_users') ? (await this.repo.listOpen(branchId, tx))[0] : null;
+    if (other) return other.id;
+    if (!required) return null;
+    throw unprocessable('shift_required', 'Avval smenani oching');
   }
 
   async open(user: AuthUser, branchId: string, openingCash = 0) {
-    const existing = await this.repo.findOpen(branchId);
-    if (existing) throw conflict('in_use', `Smena allaqachon ochiq (${existing.openedByName})`);
+    const existing = await this.repo.findOpenOf(branchId, user.id);
+    if (existing) throw conflict('in_use', 'Sizning smenangiz allaqachon ochiq');
     const cash = Math.max(0, Math.round(openingCash));
     try {
       return await runTx(this.db, async (tx) => {
@@ -49,7 +55,7 @@ export class ShiftsService {
       });
     } catch (e) {
       // Qisman unikal indeks: ikki kassir bir vaqtda ochsa — ikkinchisi 409
-      if (isUniqueViolation(e)) throw conflict('in_use', 'Smena allaqachon ochiq');
+      if (isUniqueViolation(e)) throw conflict('in_use', 'Sizning smenangiz allaqachon ochiq');
       throw e;
     }
   }
@@ -59,9 +65,10 @@ export class ShiftsService {
     return toShiftTotals(payRows, saleRows, cashOut);
   }
 
-  async close(user: AuthUser, branchId: string, countedCash?: number) {
-    const s = await this.repo.findOpen(branchId);
-    if (!s) throw notFound('Ochiq smena');
+  /** Yopish: o'zingizning smenangiz; `shiftId` berilsa (faqat administrator — manage_users) boshqa xodimning ochiq smenasi. */
+  async close(user: AuthUser, branchId: string, countedCash?: number, shiftId?: string) {
+    const s = shiftId ? await this.repo.findById(shiftId) : await this.repo.findOpenOf(branchId, user.id);
+    if (!s || s.closedAt || s.branchId !== branchId) throw notFound('Ochiq smena');
     if (s.openedBy !== user.id && !user.permissions.includes('manage_users')) {
       throw forbidden(`Smenani faqat ${s.openedByName} yoki administrator yopa oladi`, 'shift_owned_by_other');
     }

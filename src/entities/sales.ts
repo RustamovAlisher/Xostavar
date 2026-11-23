@@ -30,7 +30,8 @@ export const shifts = pgTable(
     totals: jsonb('totals').$type<Record<string, unknown>>(),
   },
   (t) => [
-    uniqueIndex('shifts_one_open_per_branch_uq').on(t.branchId).where(sql`${t.closedAt} is null`),
+    // Har kassirning o'z smenasi: bir filialda bir nechta ochiq smena, lekin bitta xodimda bittadan
+    uniqueIndex('shifts_one_open_per_user_branch_uq').on(t.branchId, t.openedBy).where(sql`${t.closedAt} is null`),
     index('shifts_branch_opened_idx').on(t.branchId, t.openedAt),
   ],
 );

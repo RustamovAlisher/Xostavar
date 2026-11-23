@@ -33,9 +33,8 @@ export class ExpensesService {
       let shiftId: string | null = null;
       if (dto.source === 'cash_register') {
         if (m.kind !== 'cash') throw unprocessable('validation_failed', "Kassadan chiqim faqat naqd pul usuli bilan bo'ladi");
-        const s = await this.shifts.current(branchId, tx);
-        if (!s) throw unprocessable('shift_required', "Kassadan chiqim uchun smena ochiq bo'lishi kerak");
-        if (s.openedBy !== user.id && !user.permissions.includes('manage_users')) throw forbidden(`Smena ${s.openedByName} nomida ochilgan`, 'shift_owned_by_other');
+        const s = await this.shifts.current(branchId, user.id, tx);
+        if (!s) throw unprocessable('shift_required', "Kassadan chiqim uchun smena ochiq bo'lishi kerak (o'zingizning smenangiz)");
         shiftId = s.id;
       }
       const id = await this.repo.insert(tx, { branchId, date: dto.date, categoryId: cat.id, amount: Math.round(dto.amount), methodId: m.id, source: dto.source, shiftId, supplierId: dto.supplierId ?? null, note: dto.note?.trim() || null, createdBy: user.id, createdByName: user.name });

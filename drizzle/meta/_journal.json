@@ -120,6 +120,13 @@
       "when": 1795438775969,
       "tag": "0016_view_totals_permission",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1795441094077,
+      "tag": "0017_shift_per_user",
+      "breakpoints": true
     }
   ]
 }
