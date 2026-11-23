@@ -119,7 +119,8 @@ def find(sku):
     return hit[0]
 
 
-def upload(pid, src):
+def upload(pid, src, variant_id=None):
+    """Mahsulot rasmi; variant_id berilsa — shu variantning rasmi (backend 0014 dan keyin)."""
     path = src
     if re.match(r'^https?://', src):
         req = urllib.request.Request(src, headers={'User-Agent': 'Mozilla/5.0'})
@@ -137,7 +138,8 @@ def upload(pid, src):
     data = open(path, 'rb').read()
     boundary = '----xostavar' + uuid.uuid4().hex
     body = (f'--{boundary}\r\nContent-Disposition: form-data; name="file"; filename="{os.path.basename(path)}"\r\nContent-Type: {ctype}\r\n\r\n').encode() + data + f'\r\n--{boundary}--\r\n'.encode()
-    return call('POST', f'/products/{pid}/image', raw=body, headers={'Content-Type': f'multipart/form-data; boundary={boundary}'})
+    url = f'/products/{pid}/variants/{variant_id}/image' if variant_id else f'/products/{pid}/image'
+    return call('POST', url, raw=body, headers={'Content-Type': f'multipart/form-data; boundary={boundary}'})
 
 
 def brief(p):
