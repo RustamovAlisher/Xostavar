@@ -152,6 +152,7 @@ export class InventoryService {
         }, tx);
       }
       await this.suppliers.syncReceiptDebt(tx, user.id, r.id);
+      await this.suppliers.linkFromReceipt(tx, supplierId, calc.map((c) => c.l.productId));
       return r.id;
     });
     return this.getReceipt(receiptId);
@@ -206,6 +207,7 @@ export class InventoryService {
         ...(dto.invoice !== undefined ? { invoice: dto.invoice.trim() || null } : {}),
       });
       await this.suppliers.syncReceiptDebt(tx, user.id, receipt.id); // jami yoki yetkazib beruvchi o'zgargan bo'lsa qarz moslanadi
+      if (newSupplier) await this.suppliers.linkFromReceipt(tx, newSupplier.id, [line.productId]);
 
       const units = await this.repo.allUnits(tx);
       const oldShort = units.find((u) => u.id === line.unit)?.short ?? line.unit;

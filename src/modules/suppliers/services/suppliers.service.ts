@@ -44,8 +44,8 @@ export class SuppliersService {
   async profile(id: string) {
     const s = await this.repo.find(id);
     if (!s) throw notFound('Yetkazib beruvchi');
-    const [receipts, debtReceipts, manual, credits, ledger] = await Promise.all([
-      this.repo.receipts(id), this.repo.debtReceipts(id), this.repo.manualDebts(id), this.repo.creditsTotal(id), this.repo.ledger(id),
+    const [receipts, debtReceipts, manual, credits, ledger, productIds] = await Promise.all([
+      this.repo.receipts(id), this.repo.debtReceipts(id), this.repo.manualDebts(id), this.repo.creditsTotal(id), this.repo.ledger(id), this.repo.linkedProductIds(id),
     ]);
     const lines = await this.repo.receiptLinesOf(receipts.map((r) => r.r.id));
     const sold = await this.soldByLine(lines);
@@ -58,6 +58,8 @@ export class SuppliersService {
     const alloc = allocateCredits(items, credits);
     return {
       supplier: toView(s),
+      /** Shu yetkazib beruvchiga ulangan mahsulotlar (kirim oynasida birinchi chiqadi). */
+      productIds,
       purchases: receipts.map(({ r, branchName }) => {
         const total = Math.round(Number(r.totalCost));
         const a = alloc.get(`r:${r.id}`);
@@ -99,6 +101,43 @@ export class SuppliersService {
   }
 
   /* ───────── Yetkazib beruvchi yozuvi ───────── */
+
+  /* ───────── Mahsulotlar bilan bog'lanish ───────── */
+
+  async productIds(id: string) {
+    if (!(await this.repo.find(id))) throw notFound('Yetkazib beruvchi');
+    return { productIds: await this.repo.linkedProductIds(id) };
+  }
+
+  async linkProduct(user: AuthUser, id: string, productId: string) {
+    await runTx(this.db, async (tx) => {
+      const s = await this.repo.find(id, tx);
+      if (!s) throw notFound('Yetkazib beruvchi');
+      const name = await this.repo.productName(tx, productId);
+      if (!name) throw notFound('Mahsulot');
+      await this.repo.link(tx, id, [productId]);
+      await this.audit.log(user, { action: 'edit', module: 'Yetkazib beruvchilar', targetId: id, targetName: s.name, details: `Mahsulot ulandi: ${name}` }, tx);
+    });
+    return this.productIds(id);
+  }
+
+  async unlinkProduct(user: AuthUser, id: string, productId: string) {
+    await runTx(this.db, async (tx) => {
+      const s = await this.repo.find(id, tx);
+      if (!s) throw notFound('Yetkazib beruvchi');
+      const removed = await this.repo.unlink(tx, id, productId);
+      if (removed.length) {
+        const name = (await this.repo.productName(tx, productId)) ?? 'mahsulot';
+        await this.audit.log(user, { action: 'edit', module: 'Yetkazib beruvchilar', targetId: id, targetName: s.name, details: `Mahsulot uzildi: ${name}` }, tx);
+      }
+    });
+    return this.productIds(id);
+  }
+
+  /** Kirimdan keyin: shu kirimdagi mahsulotlar yetkazib beruvchiga avtomatik ulanadi. */
+  linkFromReceipt(tx: DbOrTx, supplierId: string | null, productIds: string[]) {
+    return supplierId ? this.repo.link(tx, supplierId, productIds) : Promise.resolve();
+  }
 
   async create(user: AuthUser, dto: SupplierDto) {
     const name = dto.name.trim();

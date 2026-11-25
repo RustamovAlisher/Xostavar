@@ -1,8 +1,27 @@
-import { bigserial, date, index, pgTable, text, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
+import { bigserial, date, index, pgTable, primaryKey, text, uniqueIndex, uuid } from 'drizzle-orm/pg-core';
 import { createdAt, id, money } from './common.js';
 import { branches } from './branches.js';
 import { users } from './users.js';
 import { paymentMethods, suppliers } from './settings.js';
+import { products } from './catalog.js';
+
+/**
+ * Yetkazib beruvchi qaysi mahsulotlarni olib keladi (ko'pga-ko'p). Kirimda avtomatik ulanadi, kartada qo'lda ulash/uzish.
+ * Kirim oynasida shu yetkazib beruvchining mahsulotlari ro'yxat boshida chiqadi.
+ */
+export const supplierProducts = pgTable(
+  'supplier_products',
+  {
+    supplierId: uuid('supplier_id')
+      .notNull()
+      .references(() => suppliers.id, { onDelete: 'cascade' }),
+    productId: uuid('product_id')
+      .notNull()
+      .references(() => products.id, { onDelete: 'cascade' }),
+    createdAt: createdAt(),
+  },
+  (t) => [primaryKey({ columns: [t.supplierId, t.productId] }), index('supplier_products_product_idx').on(t.productId)],
+);
 
 /**
  * Yetkazib beruvchi qarzi harakati: bizning ularga qarzimiz.

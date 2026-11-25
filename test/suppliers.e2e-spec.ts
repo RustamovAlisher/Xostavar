@@ -238,4 +238,24 @@ describe('suppliers: yetkazib beruvchilarga qarz', () => {
     expect(put.status).toBe(409);
     expect(put.body.error.code).toBe('in_use');
   });
+
+  it("mahsulotlar: kirimda avtomatik ulanadi; qo'lda ulash/uzish; kartada productIds; huquqsiz 403", async () => {
+    const name = uniq('Ulash ');
+    await receive({ supplierName: name });
+    const id = await supplierId(name);
+    expect((await s.admin.get(`/suppliers/${id}/products`)).body.productIds).toEqual([productId]);
+    expect((await profile(id)).productIds).toEqual([productId]);
+
+    const other = (await makeProduct(s.admin, s, { name: uniq('Boshqa ') })).id;
+    const linked = await s.admin.put(`/suppliers/${id}/products/${other}`, {});
+    expect(linked.status).toBe(200);
+    expect(linked.body.productIds).toEqual(expect.arrayContaining([productId, other]));
+    expect((await s.admin.put(`/suppliers/${id}/products/${other}`, {})).body.productIds).toHaveLength(2); // takror — o'zgarmaydi
+    expect((await s.admin.put(`/suppliers/${id}/products/00000000-0000-4000-8000-000000000000`, {})).status).toBe(404);
+
+    const un = await s.admin.del(`/suppliers/${id}/products/${productId}`);
+    expect(un.status).toBe(200);
+    expect(un.body.productIds).toEqual([other]);
+    expect((await s.kassir.put(`/suppliers/${id}/products/${productId}`, {})).status).toBe(403);
+  });
 });

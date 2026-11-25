@@ -25,6 +25,26 @@ export class SuppliersController {
     return this.suppliers.profile(id);
   }
 
+  /** Ulangan mahsulotlar (kirim oynasida birinchi ko'rsatish uchun). */
+  @Get(':id/products')
+  @Perms('view_expenses', 'stock_in')
+  products(@Param('id', ParseUUIDPipe) id: string) {
+    return this.suppliers.productIds(id);
+  }
+
+  /** Mahsulotni yetkazib beruvchiga ulash (kartada yoki kirim oynasining o'zida). */
+  @Put(':id/products/:productId')
+  @Perms('manage_expenses', 'stock_in')
+  linkProduct(@CurrentUser() u: AuthUser, @Param('id', ParseUUIDPipe) id: string, @Param('productId', ParseUUIDPipe) productId: string) {
+    return this.suppliers.linkProduct(u, id, productId);
+  }
+
+  @Delete(':id/products/:productId')
+  @Perms('manage_expenses', 'stock_in')
+  unlinkProduct(@CurrentUser() u: AuthUser, @Param('id', ParseUUIDPipe) id: string, @Param('productId', ParseUUIDPipe) productId: string) {
+    return this.suppliers.unlinkProduct(u, id, productId);
+  }
+
   @Post()
   @Perms('manage_expenses')
   @Idempotent()

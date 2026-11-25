@@ -1,7 +1,7 @@
 import { Inject, Injectable } from '@nestjs/common';
-import { and, asc, desc, eq, gt, inArray, like, or, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gt, inArray, isNull, like, or, sql } from 'drizzle-orm';
 import { DB, type Db, type DbOrTx } from '../../../db/db.module.js';
-import { branches, paymentMethods, stockMovements, stockReceiptLines, stockReceipts, supplierLedger, suppliers } from '../../../entities/index.js';
+import { branches, paymentMethods, products, stockMovements, stockReceiptLines, stockReceipts, supplierLedger, supplierProducts, suppliers } from '../../../entities/index.js';
 import { textQuery } from '../../../common/search-sql.js';
 import type { SupplierListQuery } from '../dto/suppliers.dto.js';
 
@@ -157,6 +157,33 @@ export class SuppliersRepository {
 
   setReceiptDebt(tx: DbOrTx, id: string, v: { debtAmount: number; debtSupplierId: string | null }) {
     return tx.update(stockReceipts).set(v).where(eq(stockReceipts.id, id));
+  }
+
+  /* ───────── Mahsulotlar bilan bog'lanish ───────── */
+
+  /** Ulangan mahsulotlar (yangi ulangani birinchi). */
+  linkedProductIds(supplierId: string, tx: DbOrTx = this.db): Promise<string[]> {
+    return tx
+      .select({ id: supplierProducts.productId })
+      .from(supplierProducts)
+      .where(eq(supplierProducts.supplierId, supplierId))
+      .orderBy(desc(supplierProducts.createdAt))
+      .then((r) => r.map((x) => x.id));
+  }
+
+  /** Bir nechta mahsulotni ulash (bori qayta yozilmaydi). */
+  link(tx: DbOrTx, supplierId: string, productIds: string[]) {
+    const ids = [...new Set(productIds)];
+    if (!ids.length) return Promise.resolve();
+    return tx.insert(supplierProducts).values(ids.map((productId) => ({ supplierId, productId }))).onConflictDoNothing();
+  }
+
+  unlink(tx: DbOrTx, supplierId: string, productId: string) {
+    return tx.delete(supplierProducts).where(and(eq(supplierProducts.supplierId, supplierId), eq(supplierProducts.productId, productId))).returning({ id: supplierProducts.productId });
+  }
+
+  productName(tx: DbOrTx, productId: string): Promise<string | null> {
+    return tx.select({ name: products.name }).from(products).where(and(eq(products.id, productId), isNull(products.deletedAt))).limit(1).then((r) => r[0]?.name ?? null);
   }
 
   findPaymentMethod(tx: DbOrTx, id: string) {

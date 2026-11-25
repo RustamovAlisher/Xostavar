@@ -127,6 +127,13 @@
       "when": 1795441094077,
       "tag": "0017_shift_per_user",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1795582034892,
+      "tag": "0018_supplier_products",
+      "breakpoints": true
     }
   ]
 }
